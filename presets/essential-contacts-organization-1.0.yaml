@@ -1,0 +1,37 @@
+#
+# Essential Contacts
+#
+# Combine notification categories, each email may only be used once
+#
+all:
+  parent: !format ["organizations/{}", *customer-organization-id]
+  email: !format ["{}@{}", "essential-contacts-all", *customer-domain]
+
+  language_tag: "en-GB"
+  notification_category_subscriptions: [ "ALL" ]
+
+#   security:
+#     parent: !format ["organizations/{}", *customer-organization-id]
+#     email: !format ["{}@{}", "essential-contacts-all", *customer-domain]
+#     language_tag: "en-GB"
+#     notification_category_subscriptions: [ "SECURITY" ]
+#   technical:
+#     parent: !format ["organizations/{}", *customer-organization-id]
+#     email: !format ["{}@{}", "essential-contacts-technical", *customer-domain]
+#     language_tag: "en-GB"
+#     notification_category_subscriptions: [ "TECHNICAL" ]
+#   legal:
+#     parent: !format ["organizations/{}", *customer-organization-id]
+#     email: !format ["{}@{}", "essential-contacts-legal", *customer-domain]
+#     language_tag: "en-GB"
+#     notification_category_subscriptions: [ "LEGAL" ]
+#   suspension:
+#     parent: !format ["organizations/{}", *customer-organization-id]
+#     email: !format ["{}@{}", "essential-contacts-suspension", *customer-domain]
+#     language_tag: "en-GB"
+#     notification_category_subscriptions: [ "SUSPENSION" ]
+#   billing:
+#     parent: !format ["organizations/{}", *customer-organization-id]
+#     email: !format ["{}@{}", "essential-contacts-billing", *customer-domain]
+#     language_tag: "en-GB"
+#     notification_category_subscriptions: [ "BILLING" ]

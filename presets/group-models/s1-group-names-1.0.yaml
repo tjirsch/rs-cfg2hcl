@@ -1,0 +1,10 @@
+#
+# S1 Group Names for Small Customers
+#
+# Copy under cloud_identity_group: block in the YAML file
+#
+gcp-organization-admins-name: &gcp-organization-admins-name "gcp-organization-admins"
+gcp-project-admins-name:      &gcp-project-admins-name      "gcp-project-admins"
+gcp-security-admins-name:     &gcp-security-admins-name     "gcp-security-admins"
+gcp-security-viewers-name:    &gcp-security-viewers-name    "gcp-security-viewers"
+gcp-billing-admins-name:      &gcp-billing-admins-name      "gcp-billing-admins"

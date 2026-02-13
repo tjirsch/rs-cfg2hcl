@@ -1,0 +1,61 @@
+#
+# S1 Group Definitions for Small Customers
+#
+# Copy under cloud_identity_group: block in the YAML file
+#
+# gcp-organization-admins:
+!format ["group:{}@{}", *gcp-organization-admins-name, *customer-domain]:
+  display_name: GCP-Organization Admins
+  description: |
+    Permissions merged from default roles for
+    Organization administrators, Hybrid Connectivity administrators,
+    Logging-monitoring administrators and Network administrators.
+  owner:
+    - !format ["{}@{}.iam.gserviceaccount.com", *svc-iac-account, *infra-project-name]
+  member:
+    - !format ["user:{}@{}",*first-admin, *customer-domain]:
+
+# gcp-project-admins:
+!format ["group:{}@{}", *gcp-project-admins-name, *customer-domain]:
+  display_name: GCP-Project Admins
+  description: |
+    Permissions allow Day2Day Project Administration across all projects+
+    Hybrid Connectivity administrators, Logging-monitoring administrators and
+    Network administrators.
+  owner:
+    - !format ["{}@{}.iam.gserviceaccount.com", *svc-iac-account, *infra-project-name]
+  member:
+    - !format ["user:{}@{}",*first-admin, *customer-domain]:
+
+# gcp-security-admins:
+!format ["group:{}@{}", *gcp-security-admins-name, *customer-domain]:
+  display_name: GCP-Security Admins
+  description: |
+    Permissions for use with Security Admin role. Use of setting IAM on most Resources.
+    Organizational, Folder  and Project IAM Admin roles.
+    SCC PowerUser.
+  owner:
+    - !format ["{}@{}.iam.gserviceaccount.com", *svc-iac-account, *infra-project-name]
+  member:
+    - !format ["user:{}@{}",*first-admin, *customer-domain]:
+
+# gcp-security-viewers:
+!format ["group:{}@{}", *gcp-security-viewers-name, *customer-domain]:
+  display_name: GCP-Security Viewers
+  description: |
+    All Viewer Permissions for use with Security Auitor role.
+    SCC User.
+  owner:
+    - !format ["{}@{}.iam.gserviceaccount.com", *svc-iac-account, *infra-project-name]
+  member:
+    - !format ["user:{}@{}",*first-admin, *customer-domain]:
+
+# gcp-billing-admins:
+!format ["group:{}@{}", *gcp-billing-admins-name, *customer-domain]:
+  display_name: GCP-Billing Admins
+  description: |
+    All Billing and Procurement roles.
+  owner:
+    - !format ["{}@{}.iam.gserviceaccount.com", *svc-iac-account, *infra-project-name]
+  member:
+    - !format ["user:{}@{}",*first-admin, *customer-domain]:

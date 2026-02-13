@@ -1,0 +1,6 @@
+# gcp-vpc-network-admins
+# Network administrators are responsible for creating VPC networks, subnets, and firewall rules.
+roles/compute.networkAdmin
+roles/compute.securityAdmin
+roles/compute.xpnAdmin
+roles/resourcemanager.folderViewer

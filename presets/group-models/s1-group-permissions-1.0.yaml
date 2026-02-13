@@ -1,0 +1,71 @@
+
+#
+# S1 Group Permissions for Small Customers
+#
+# Copy under organization_iam_member: block in the YAML file
+# WIP! Permissions need refinement
+#
+!format ["group:{}@{}", *gcp-organization-admins-name, *customer-domain]:
+  - roles/resourcemanager.organizationAdmin
+  - roles/iam.organizationRoleAdmin
+  - roles/orgpolicy.policyAdmin
+  - roles/resourcemanager.folderAdmin
+  - roles/resourcemanager.folderIamAdmin
+  - roles/resourcemanager.projectCreator
+  - roles/resourcemanager.projectIamAdmin
+  - roles/cloudsupport.admin
+  - roles/billing.user
+
+!format ["group:{}@{}", *gcp-project-admins-name, *customer-domain]:
+  - roles/resourcemanager.folderViewer
+  - roles/resourcemanager.projectIamAdmin
+  - roles/resourcemanager.tagAdmin
+  - roles/owner
+  - roles/bigquery.admin
+  - roles/cloudsupport.admin
+  - roles/compute.networkAdmin
+  - roles/compute.viewer
+  - roles/compute.xpnAdmin
+  - roles/container.viewer
+  - roles/iam.organizationRoleViewer
+  - roles/iam.serviceAccountCreator
+  - roles/logging.admin
+  - roles/monitoring.admin
+  - roles/compute.networkAdmin
+  - roles/compute.xpnAdmin
+  - roles/logging.admin
+  - roles/logging.configWriter
+  - roles/logging.privateLogViewer
+  - roles/monitoring.admin
+  - roles/monitoring.viewer
+  - roles/pubsub.admin
+  - roles/billing.user
+
+!format ["group:{}@{}", *gcp-security-admins-name, *customer-domain]:
+  - roles/orgpolicy.policyAdmin
+  - roles/compute.viewer
+  - roles/container.viewer
+  - roles/iam.organizationRoleViewer
+  - roles/iam.securityReviewer
+  - roles/monitoring.admin
+  - roles/logging.configWriter
+  - roles/logging.privateLogViewer
+  - roles/resourcemanager.folderIamAdmin
+  - roles/securitycenter.admin
+  - roles/billing.user
+
+!format ["group:{}@{}", *gcp-security-viewers-name, *customer-domain]:
+  - roles/resourcemanager.organizationViewer
+  - roles/compute.viewer
+  - roles/logging.configWriter
+  - roles/logging.privateLogViewer
+  - roles/monitoring.viewer
+  - roles/logging.viewer
+  - roles/container.viewer
+  - roles/iam.organizationRoleViewer
+  - roles/iam.securityReviewer
+
+!format ["group:{}@{}", *gcp-billing-admins-name, *customer-domain]:
+  - roles/resourcemanager.organizationViewer
+  - roles/billing.admin
+  - roles/billing.creator

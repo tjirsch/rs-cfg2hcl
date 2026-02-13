@@ -1,0 +1,174 @@
+#
+# https://docs.cloud.google.com/resource-manager/docs/organization-policy/org-policy-constraints
+#
+# Include all CIS GCP Foundation 4.0 policies
+# https://www.cisecurity.org/cis-gcp-foundation-4-0-policies/
+#
+# Some policies need to be activated manually before import
+#
+iam-managed-disableServiceAccountKeyCreation:
+  name: iam.managed.disableServiceAccountKeyCreation
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"iam.managed.disableServiceAccountKeyCreation"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+    rules:
+      - enforce: "TRUE"
+
+iam-managed-disableServiceAccountKeyUpload:
+  name: iam.managed.disableServiceAccountKeyUpload
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"iam.managed.disableServiceAccountKeyUpload"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+    rules:
+      - enforce: "TRUE"
+
+iam-managed-preventPrivilegedBasicRolesForDefaultServiceAccounts:
+  name: iam.managed.preventPrivilegedBasicRolesForDefaultServiceAccounts
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"iam.managed.preventPrivilegedBasicRolesForDefaultServiceAccounts"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+    rules:
+      - enforce: "TRUE"
+
+iam-automaticIamGrantsForDefaultServiceAccounts:
+  name: iam.automaticIamGrantsForDefaultServiceAccounts
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"iam.automaticIamGrantsForDefaultServiceAccounts"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+    rules:
+      - enforce: "TRUE"
+
+iam-allowedPolicyMemberDomains:
+  name: iam.allowedPolicyMemberDomains
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"iam.allowedPolicyMemberDomains"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+    rules:
+      - values:
+          allowed_values:
+            - *customer-id
+
+storage-uniformBucketLevelAccess:
+  name: storage.uniformBucketLevelAccess
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"storage.uniformBucketLevelAccess"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+    rules:
+      - enforce: "TRUE"
+
+compute-setNewProjectDefaultToZonalDNSOnly:
+  name: compute.setNewProjectDefaultToZonalDNSOnly
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"compute.setNewProjectDefaultToZonalDNSOnly"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+    rules:
+      - enforce: "TRUE"
+
+compute-restrictProtocolForwardingCreationForTypes:
+  name: compute.restrictProtocolForwardingCreationForTypes
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"compute.restrictProtocolForwardingCreationForTypes"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+    rules:
+      - values:
+          allowedValues:
+            - INTERNAL
+
+compute-skipDefaultNetworkCreation:
+  name: compute.skipDefaultNetworkCreation
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"compute.skipDefaultNetworkCreation"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+    rules:
+      - enforce: "TRUE"
+
+gcp-resourceLocations:
+  name: gcp.resourceLocations
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"gcp.resourceLocations"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+    rules:
+      - values:
+          allowed_values:
+            - "in:eu-locations"
+            - "in:us-locations"
+
+compute-managed-requireOsLogin:
+  name: compute.managed.requireOsLogin
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"compute.managed.requireOsLogin"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+    rules:
+      - enforce: "TRUE"
+
+gcp-detailedAuditLoggingMode:
+  name: gcp.detailedAuditLoggingMode
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"gcp.detailedAuditLoggingMode"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+   rules:
+     - enforce: "TRUE"
+
+iam-disableAuditLoggingExemption:
+  name: iam.disableAuditLoggingExemption
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"iam.disableAuditLoggingExemption"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+   rules:
+     - enforce: "TRUE"
+
+compute-requireVpcFlowLogs:
+  name: compute.requireVpcFlowLogs
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"compute.requireVpcFlowLogs"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+    rules:
+      - values:
+          allowed_values:
+            - "ESSENTIAL"
+            - "LIGHT"
+            - "COMPREHENSIVE"
+
+storage-publicAccessPrevention:
+  name: storage.publicAccessPrevention
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"storage.publicAccessPrevention"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+   rules:
+     - enforce: "TRUE"
+
+compute-managed-vmCanIpForward:
+  name: compute.managed.vmCanIpForward
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"compute.managed.vmCanIpForward"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+   rules:
+     - enforce: "TRUE"
+
+compute-managed-vmExternalIpAccess:
+  name: compute.managed.vmExternalIpAccess
+  email: !format ["{}@{}", "essential-contacts-all", *customer-domain]
+
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"compute.managed.vmExternalIpAccess"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+   rules:
+     - enforce: "TRUE"
+
+essentialcontacts-managed-allowedContactDomains:
+  name: essentialcontacts.managed.allowedContactDomains
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"essentialcontacts.managed.allowedContactDomains"]
+  parent: !format ["organizations/{}", *customer-organization-id]
+  spec:
+    rules:
+      - enforce: "TRUE"
+        parameters: !format ["{\"allowedDomains\" : [\"@{}\"]}", *customer-domain]
+
+iam-managed-allowedPolicyMembers:
+  name: iam.managed.allowedPolicyMembers
+  # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"iam.managed.allowedPolicyMembers"]
+  parent: !format ["organizations/{}", *customer-organization-id]#
+  spec:
+    rules:
+      - enforce: "TRUE"
+        parameters: !format ["{\"allowedPrincipalSets\" : [\"//cloudresourcemanager.googleapis.com/organizations/{}\"]}", *customer-organization-id]

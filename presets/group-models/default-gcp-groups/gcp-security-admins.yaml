@@ -1,0 +1,16 @@
+# gcp-security-admins
+# Security administrators are responsible for establishing and managing security policies for the entire organization, including access management and organization constraint policies
+roles/cloudkms.admin
+roles/compute.viewer
+roles/container.viewer
+roles/iam.organizationRoleViewer
+roles/iam.securityAdmin
+roles/iam.securityReviewer
+roles/iam.serviceAccountCreator
+roles/logging.admin
+roles/logging.configWriter
+roles/logging.privateLogViewer
+roles/monitoring.admin
+roles/orgpolicy.policyAdmin
+roles/resourcemanager.folderIamAdmin
+roles/securitycenter.admin

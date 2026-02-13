@@ -1,0 +1,5 @@
+# gcp-billing-admins
+# Billing administrators are responsible for setting up billing accounts and monitoring their usage
+roles/billing.admin
+roles/billing.creator
+roles/resourcemanager.organizationViewer

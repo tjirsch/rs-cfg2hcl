@@ -1,0 +1,4 @@
+# gcp-logging-monitoring-viewers
+# Logging-monitoring viewers have read-only access to a defined subset of both ingested logs and monitoring data.
+roles/logging.viewer
+roles/monitoring.viewer
