@@ -24,7 +24,7 @@ These options can be placed anywhere in the command (e.g., before or after subco
 
 ## Installation
 
-### Using cargo-dist (Recommended)
+### Using cargo-dist Installer (Recommended)
 
 Install the latest release using the cargo-dist installer:
 
@@ -34,6 +34,8 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tjirsch/rs-cfg2hcl/rele
 
 This will install `cfg2hcl` to your cargo bin directory (`~/.cargo/bin` by default).
 
+> **Note:** The installer script is generated automatically when releases are created. If you get a 404 error, it means no releases have been published yet. Use the "From Source" method below instead.
+
 ### From Source
 
 To install the binary to `/usr/local/bin` (requires sudo):
@@ -41,6 +43,12 @@ To install the binary to `/usr/local/bin` (requires sudo):
 cargo xtask install
 ```
 This command safely builds the release binary as your user and then uses `sudo` only for the copy step. It works from any subdirectory in the project.
+
+Alternatively, install directly with cargo:
+```bash
+cargo install --path .
+```
+This installs to `~/.cargo/bin` (no sudo required).
 
 ## CLI Usage
 
