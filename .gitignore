@@ -1,0 +1,16 @@
+.agent
+.cursor
+.terraform.lock.hcl
+.terraform/
+/organizations/*
+/presets/*
+hcl/
+schemas/
+default.json
+plan.json
+plan.binary
+migrate.sh
+.DS_Store
+/target
+.env
+*.secret
