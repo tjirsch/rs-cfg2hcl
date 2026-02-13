@@ -1,5 +1,6 @@
 .agent
 .cursor
+.claude
 .terraform.lock.hcl
 .terraform/
 /organizations/*
