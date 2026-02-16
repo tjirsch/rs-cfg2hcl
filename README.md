@@ -32,7 +32,18 @@ Install the latest release using the cargo-dist installer:
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tjirsch/rs-cfg2hcl/releases/latest/download/cfg2hcl-installer.sh | sh
 ```
 
-This will install `cfg2hcl` to your cargo bin directory (`~/.cargo/bin` by default).
+This will install `cfg2hcl` to `~/.local/bin` and automatically add it to your PATH if needed.
+
+> **Note:** The installer will:
+> - Install the binary to `~/.local/bin`
+> - Check if this directory is on your PATH
+> - If not, add it to your shell profile (e.g., `.bashrc`, `.zshrc`)
+> - Provide instructions to refresh your shell
+>
+> If you prefer a different location, you can override it:
+> ```bash
+> curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tjirsch/rs-cfg2hcl/releases/latest/download/cfg2hcl-installer.sh | CARGO_DIST_FORCE_INSTALL_DIR=/your/custom/path sh
+> ```
 
 > **Note:** The installer script is generated automatically when releases are created. If you get a 404 error, it means no releases have been published yet. Use the "From Source" method below instead.
 
