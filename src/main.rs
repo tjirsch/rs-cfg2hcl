@@ -255,6 +255,8 @@ enum Commands {
         #[arg(long)]
         mode: Option<String>,
     },
+    /// Check for and install new releases from GitHub
+    SelfUpdate,
 }
 
 #[tokio::main]
@@ -289,8 +291,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Commands::Transpile { .. } | Commands::ScanPlan { .. } | Commands::GenerateMigration { .. } | Commands::UpdateSchema { .. } | Commands::DiscoverFromState { .. } | Commands::DiscoverFromOrganization { .. } | Commands::Migrate { .. } | Commands::Bootstrap { .. } => {
                     return Err("Config file 'config.toml' not found in current directory. Please provide it or specify --config <PATH>.".into());
                 }
-                Commands::Init { .. } => {
-                    // Init can proceed without a config file
+                Commands::Init { .. } | Commands::SelfUpdate => {
+                    // Init and SelfUpdate can proceed without a config file
                     PathBuf::from("config.toml")
                 }
             }
@@ -869,6 +871,9 @@ Thumbs.db
             println!("Migration to {} mode complete.", target_mode);
             Ok(())
         }
+        Commands::SelfUpdate => {
+            run_self_update().await
+        }
     }?;
 
     Ok(())
@@ -1098,6 +1103,211 @@ fn print_recursive_help(cmd: &mut clap::Command) {
     }
 }
 
+
+async fn run_self_update() -> Result<(), Box<dyn std::error::Error>> {
+    const REPO: &str = "tjirsch/rs-cfg2hcl";
+    const API_URL: &str = "https://api.github.com/repos";
+    
+    let current_version = env!("CARGO_PKG_VERSION");
+    println!("Current version: {}", current_version);
+    
+    // Fetch latest release from GitHub
+    let client = reqwest::Client::builder()
+        .user_agent("cfg2hcl-update-checker")
+        .build()?;
+    
+    let url = format!("{}/{}/releases/latest", API_URL, REPO);
+    let response = client.get(&url).send().await?;
+    
+    if !response.status().is_success() {
+        return Err(format!("Failed to fetch release info: {}", response.status()).into());
+    }
+    
+    #[derive(Deserialize)]
+    struct Release {
+        tag_name: String,
+        html_url: String,
+        // assets: Vec<Asset>, // Reserved for future use (e.g., direct binary download)
+    }
+    
+    // #[derive(Deserialize)]
+    // struct Asset {
+    //     name: String,
+    //     browser_download_url: String,
+    // }
+    
+    let release: Release = response.json().await?;
+    
+    // Extract version from tag (remove 'v' prefix if present)
+    let latest_version = release.tag_name.trim_start_matches('v');
+    
+    println!("Latest version: {}", latest_version);
+    
+    // Simple version comparison (semver comparison)
+    if compare_versions(current_version, latest_version) < 0 {
+        println!("\n⚠️  A new version is available!");
+        println!("   Current: {}", current_version);
+        println!("   Latest:  {}", latest_version);
+        println!("   Release: {}", release.html_url);
+        println!("\n📥 Installing update...");
+        
+        // Find the installer script
+        let installer_url = format!("https://github.com/{}/releases/latest/download/cfg2hcl-installer.sh", REPO);
+        
+        // Download and run installer
+        let installer_script = client.get(&installer_url).send().await?.text().await?;
+        
+        // Write to temp file and execute
+        let temp_file = std::env::temp_dir().join("cfg2hcl-installer.sh");
+        std::fs::write(&temp_file, installer_script)?;
+        
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&temp_file, std::fs::Permissions::from_mode(0o755))?;
+            
+            let status = std::process::Command::new("sh")
+                .arg(&temp_file)
+                .status()?;
+            
+            if status.success() {
+                println!("✅ Update installed successfully!");
+                println!("   Please restart your terminal or run: source ~/.profile");
+                
+                // Download and open README.md
+                if let Err(e) = download_and_open_readme(&client, REPO, &latest_version).await {
+                    eprintln!("⚠️  Warning: Could not download README: {}", e);
+                }
+            } else {
+                return Err("Failed to run installer script".into());
+            }
+        }
+        
+        #[cfg(windows)]
+        {
+            return Err("Automatic installation on Windows is not yet supported. Please download and run the installer manually.".into());
+        }
+    } else {
+        println!("✅ You are running the latest version!");
+    }
+    
+    Ok(())
+}
+
+async fn download_and_open_readme(client: &reqwest::Client, repo: &str, version: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // Get default download directory
+    let download_dir = get_download_dir()?;
+    let readme_path = download_dir.join(format!("cfg2hcl-{}-README.md", version));
+    
+    // Try to get README from the release first (in release body or assets)
+    // If not available, fetch from the repo's main branch
+    let readme_url = format!("https://raw.githubusercontent.com/{}/main/README.md", repo);
+    
+    println!("\n📄 Downloading README...");
+    let readme_content = client.get(&readme_url).send().await?.text().await?;
+    
+    std::fs::write(&readme_path, readme_content)?;
+    println!("   Saved to: {}", readme_path.display());
+    
+    // Open in default editor/viewer
+    println!("   Opening README...");
+    open_file(&readme_path)?;
+    
+    Ok(())
+}
+
+fn get_download_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var("HOME")?;
+        Ok(PathBuf::from(home).join("Downloads"))
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        // Try XDG_DOWNLOAD_DIR first, fallback to ~/Downloads
+        if let Ok(dir) = std::env::var("XDG_DOWNLOAD_DIR") {
+            Ok(PathBuf::from(dir))
+        } else {
+            let home = std::env::var("HOME")?;
+            Ok(PathBuf::from(home).join("Downloads"))
+        }
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        use std::env;
+        let user_profile = env::var("USERPROFILE")?;
+        Ok(PathBuf::from(user_profile).join("Downloads"))
+    }
+    
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        Err("Unsupported platform for download directory".into())
+    }
+}
+
+fn open_file(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .status()?;
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        // Try xdg-open first, fallback to $EDITOR if set
+        if std::process::Command::new("xdg-open")
+            .arg(path)
+            .status()
+            .is_err()
+        {
+            if let Ok(editor) = std::env::var("EDITOR") {
+                std::process::Command::new(editor)
+                    .arg(path)
+                    .status()?;
+            } else {
+                return Err("Could not open file: xdg-open not available and EDITOR not set".into());
+            }
+        }
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", path.to_str().unwrap()])
+            .status()?;
+    }
+    
+    Ok(())
+}
+
+fn compare_versions(v1: &str, v2: &str) -> i32 {
+    let parse_version = |v: &str| -> Vec<u32> {
+        v.split('.')
+            .map(|s| s.parse::<u32>().unwrap_or(0))
+            .collect()
+    };
+    
+    let v1_parts = parse_version(v1);
+    let v2_parts = parse_version(v2);
+    
+    let max_len = v1_parts.len().max(v2_parts.len());
+    
+    for i in 0..max_len {
+        let v1_val = v1_parts.get(i).copied().unwrap_or(0);
+        let v2_val = v2_parts.get(i).copied().unwrap_or(0);
+        
+        if v1_val < v2_val {
+            return -1;
+        } else if v1_val > v2_val {
+            return 1;
+        }
+    }
+    
+    0
+}
 
 fn print_yaml_error_context(content: &str, err: &serde_yaml::Error) {
     if let Some(location) = err.location() {
