@@ -256,7 +256,14 @@ enum Commands {
         mode: Option<String>,
     },
     /// Check for and install new releases from GitHub
-    SelfUpdate,
+    SelfUpdate {
+        /// Do not download README.md after installing
+        #[arg(long)]
+        no_download_readme: bool,
+        /// Do not open README.md after downloading (only applies if download runs)
+        #[arg(long)]
+        no_open_readme: bool,
+    },
 }
 
 #[tokio::main]
@@ -291,7 +298,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Commands::Transpile { .. } | Commands::ScanPlan { .. } | Commands::GenerateMigration { .. } | Commands::UpdateSchema { .. } | Commands::DiscoverFromState { .. } | Commands::DiscoverFromOrganization { .. } | Commands::Migrate { .. } | Commands::Bootstrap { .. } => {
                     return Err("Config file 'config.toml' not found in current directory. Please provide it or specify --config <PATH>.".into());
                 }
-                Commands::Init { .. } | Commands::SelfUpdate => {
+                Commands::Init { .. } | Commands::SelfUpdate { .. } => {
                     // Init and SelfUpdate can proceed without a config file
                     PathBuf::from("config.toml")
                 }
@@ -871,8 +878,8 @@ Thumbs.db
             println!("Migration to {} mode complete.", target_mode);
             Ok(())
         }
-        Commands::SelfUpdate => {
-            run_self_update().await
+        Commands::SelfUpdate { no_download_readme, no_open_readme } => {
+            run_self_update(!no_download_readme, !no_open_readme).await
         }
     }?;
 
@@ -1104,7 +1111,7 @@ fn print_recursive_help(cmd: &mut clap::Command) {
 }
 
 
-async fn run_self_update() -> Result<(), Box<dyn std::error::Error>> {
+async fn run_self_update(download_readme: bool, open_readme: bool) -> Result<(), Box<dyn std::error::Error>> {
     const REPO: &str = "tjirsch/rs-cfg2hcl";
     const API_URL: &str = "https://api.github.com/repos";
     
@@ -1174,9 +1181,12 @@ async fn run_self_update() -> Result<(), Box<dyn std::error::Error>> {
                 println!("✅ Update installed successfully!");
                 println!("   Please restart your terminal or run: source ~/.profile");
                 
-                // Download and open README.md
-                if let Err(e) = download_and_open_readme(&client, REPO, &latest_version).await {
-                    eprintln!("⚠️  Warning: Could not download README: {}", e);
+                if download_readme {
+                    match download_and_open_readme(&client, REPO, &latest_version, open_readme).await {
+                        Ok(Some(path)) => println!("README: {}", path.display()),
+                        Ok(None) => {}
+                        Err(e) => eprintln!("⚠️  Warning: Could not download README: {}", e),
+                    }
                 }
             } else {
                 return Err("Failed to run installer script".into());
@@ -1194,26 +1204,23 @@ async fn run_self_update() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn download_and_open_readme(client: &reqwest::Client, repo: &str, version: &str) -> Result<(), Box<dyn std::error::Error>> {
-    // Get default download directory
+async fn download_and_open_readme(
+    client: &reqwest::Client,
+    repo: &str,
+    version: &str,
+    open_after_download: bool,
+) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
     let download_dir = get_download_dir()?;
     let readme_path = download_dir.join(format!("cfg2hcl-{}-README.md", version));
-    
-    // Try to get README from the release first (in release body or assets)
-    // If not available, fetch from the repo's main branch
     let readme_url = format!("https://raw.githubusercontent.com/{}/main/README.md", repo);
-    
     println!("\n📄 Downloading README...");
     let readme_content = client.get(&readme_url).send().await?.text().await?;
-    
     std::fs::write(&readme_path, readme_content)?;
-    println!("   Saved to: {}", readme_path.display());
-    
-    // Open in default editor/viewer
-    println!("   Opening README...");
-    open_file(&readme_path)?;
-    
-    Ok(())
+    if open_after_download {
+        println!("   Opening README...");
+        open_file(&readme_path)?;
+    }
+    Ok(Some(readme_path))
 }
 
 fn get_download_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {

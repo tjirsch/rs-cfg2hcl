@@ -21,6 +21,7 @@ These options can be placed anywhere in the command (e.g., before or after subco
 
 - `-c, --config <FILE>`: Path to tool config file. Mandatory for most commands if `config.toml` is not in the current directory.
 - `-v, --validation <LEVEL>`: Validation level for mandatory parameters (`warn`, `error`, `none`).
+- `--verbose`: Enable verbose output. When invoked without a subcommand (e.g. `cfg2hcl --verbose`), prints full recursive help listing all subcommands and their options.
 
 ## Installation
 
@@ -264,6 +265,20 @@ cfg2hcl update-schema --providers google,google-beta
 - runs `tofu init` in a temporary directory.
 - runs `tofu providers schema -json` to export the latest definitions.
 - Updates the JSON files in `schemas/`.
+
+### Self-update (`self-update`)
+Check for and install a new release from GitHub. After a successful install, the tool downloads the release README and prints its full path, then opens it unless you pass the options below.
+
+```bash
+cfg2hcl self-update [options]
+```
+
+**Parameters:**
+- `--no-download-readme`: Do not download README.md after installing.
+- `--no-open-readme`: Download README and print its path, but do not open it (only applies if download runs).
+
+**Under the Hood:**
+- Fetches the latest release from the GitHub API, compares versions, and runs the cargo-dist installer script when a newer version is available. On success, optionally downloads `README.md` from the repo and prints its path (e.g. `README: /Users/you/Downloads/cfg2hcl-0.4.9-README.md`).
 
 ## Day 0 Onboarding Playbook
 
