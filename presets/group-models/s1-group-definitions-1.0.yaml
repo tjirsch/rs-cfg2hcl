@@ -2,7 +2,7 @@
 # S1 Group Definitions for Small Customers
 #
 # Copy under cloud_identity_group: block in the YAML file
-#
+# 
 # gcp-organization-admins:
 !format ["group:{}@{}", *gcp-organization-admins-name, *customer-domain]:
   display_name: GCP-Organization Admins
