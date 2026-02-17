@@ -576,9 +576,25 @@ impl<'a> Transpiler<'a> {
                 continue;
             }
 
+            // Skip keys that are known resource parameters (never Terraform resource types)
+            const KNOWN_ATTRIBUTE_KEYS: &[&str] = &[
+                "labels", "deletion_protection", "deletion_policy", "metadata", "annotations",
+                "name", "project_id", "billing_account", "tags", "display_name", "parent",
+            ];
+            if KNOWN_ATTRIBUTE_KEYS.contains(&resource_type.as_str()) {
+                continue;
+            }
+
             // Only treat Mapping values as potential resources (attributes/variables are usually simple values)
             // Skip if value is not a Mapping or Sequence (which would indicate it's not a resource)
             if !matches!(value, serde_yaml::Value::Mapping(_) | serde_yaml::Value::Sequence(_)) {
+                continue;
+            }
+
+            // Only consider keys that look like Terraform resource types (contain underscore or start with google_)
+            // This avoids false "unknown resource" errors for attribute-like keys (e.g. labels, deletion_protection)
+            let looks_like_resource_type = resource_type.contains('_') || resource_type.starts_with("google_");
+            if !looks_like_resource_type {
                 continue;
             }
 

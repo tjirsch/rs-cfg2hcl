@@ -1,9 +1,5 @@
-
 #
-# S1 Group Permissions for Small Customers
-#
-# Copy under organization_iam_member: block in the YAML file
-# WIP! Permissions need refinement
+# Include under organization_iam_member:
 #
 !format ["group:{}@{}", *gcp-organization-admins-name, *customer-domain]:
   - roles/resourcemanager.organizationAdmin
@@ -20,25 +16,21 @@
   - roles/resourcemanager.folderViewer
   - roles/resourcemanager.projectIamAdmin
   - roles/resourcemanager.tagAdmin
+  - roles/iam.organizationRoleViewer
+  - roles/iam.serviceAccountCreator
   - roles/owner
   - roles/bigquery.admin
+  - roles/pubsub.admin
   - roles/cloudsupport.admin
   - roles/compute.networkAdmin
   - roles/compute.viewer
   - roles/compute.xpnAdmin
   - roles/container.viewer
-  - roles/iam.organizationRoleViewer
-  - roles/iam.serviceAccountCreator
-  - roles/logging.admin
   - roles/monitoring.admin
-  - roles/compute.networkAdmin
-  - roles/compute.xpnAdmin
   - roles/logging.admin
   - roles/logging.configWriter
   - roles/logging.privateLogViewer
-  - roles/monitoring.admin
   - roles/monitoring.viewer
-  - roles/pubsub.admin
   - roles/billing.user
 
 !format ["group:{}@{}", *gcp-security-admins-name, *customer-domain]:
@@ -60,7 +52,7 @@
   - roles/logging.configWriter
   - roles/logging.privateLogViewer
   - roles/monitoring.viewer
-  - roles/logging.viewer
+  - roles/logging.viewer 
   - roles/container.viewer
   - roles/iam.organizationRoleViewer
   - roles/iam.securityReviewer

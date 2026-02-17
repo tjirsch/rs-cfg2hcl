@@ -2,7 +2,9 @@
 # Include under cloud_identity_group:
 #
 # gcp-organization-admins:
+
 *gcp-organization-admins-name:
+  import-id: groups/01qoc8b12gq9ww0
   display_name: GCP-Organization Admins
   description: |
     Permissions merged from default roles for
@@ -15,6 +17,7 @@
 
 # gcp-project-admins:
 *gcp-project-admins-name:
+  import-id: groups/04h042r038py3es
   display_name: GCP-Project Admins
   description: |
     Permissions allow Day2Day Project Administration across all projects+
@@ -27,6 +30,7 @@
 
 # gcp-security-admins:
 *gcp-security-admins-name:
+  import-id: groups/00sqyw641j8jt5g
   display_name: GCP-Security Admins
   description: |
     Permissions for use with Security Admin role. Use of setting IAM on most Resources.
@@ -39,6 +43,7 @@
 
 # gcp-security-viewers:
 *gcp-security-viewers-name:
+  import-id: groups/00gjdgxs1mdzce5
   display_name: GCP-Security Viewers
   description: |
     All Viewer Permissions for use with Security Auitor role.
@@ -50,6 +55,7 @@
 
 # gcp-billing-admins:
 *gcp-billing-admins-name:
+  import-id: groups/0111kx3o2o0sqj8
   display_name: GCP-Billing Admins
   description: |
     All Billing and Procurement roles.
