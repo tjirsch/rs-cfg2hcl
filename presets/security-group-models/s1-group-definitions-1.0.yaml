@@ -1,10 +1,8 @@
 #
-# S1 Group Definitions for Small Customers
+# Include under cloud_identity_group:
 #
-# Copy under cloud_identity_group: block in the YAML file
-# 
 # gcp-organization-admins:
-!format ["group:{}@{}", *gcp-organization-admins-name, *customer-domain]:
+*gcp-organization-admins-name:
   display_name: GCP-Organization Admins
   description: |
     Permissions merged from default roles for
@@ -16,7 +14,7 @@
     - !format ["user:{}@{}",*first-admin, *customer-domain]:
 
 # gcp-project-admins:
-!format ["group:{}@{}", *gcp-project-admins-name, *customer-domain]:
+*gcp-project-admins-name:
   display_name: GCP-Project Admins
   description: |
     Permissions allow Day2Day Project Administration across all projects+
@@ -28,7 +26,7 @@
     - !format ["user:{}@{}",*first-admin, *customer-domain]:
 
 # gcp-security-admins:
-!format ["group:{}@{}", *gcp-security-admins-name, *customer-domain]:
+*gcp-security-admins-name:
   display_name: GCP-Security Admins
   description: |
     Permissions for use with Security Admin role. Use of setting IAM on most Resources.
@@ -40,7 +38,7 @@
     - !format ["user:{}@{}",*first-admin, *customer-domain]:
 
 # gcp-security-viewers:
-!format ["group:{}@{}", *gcp-security-viewers-name, *customer-domain]:
+*gcp-security-viewers-name:
   display_name: GCP-Security Viewers
   description: |
     All Viewer Permissions for use with Security Auitor role.
@@ -51,7 +49,7 @@
     - !format ["user:{}@{}",*first-admin, *customer-domain]:
 
 # gcp-billing-admins:
-!format ["group:{}@{}", *gcp-billing-admins-name, *customer-domain]:
+*gcp-billing-admins-name:
   display_name: GCP-Billing Admins
   description: |
     All Billing and Procurement roles.

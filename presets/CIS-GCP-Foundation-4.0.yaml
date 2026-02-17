@@ -71,7 +71,7 @@ compute-restrictProtocolForwardingCreationForTypes:
   spec:
     rules:
       - values:
-          allowedValues:
+          allowed_values:
             - INTERNAL
 
 compute-skipDefaultNetworkCreation:

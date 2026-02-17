@@ -471,7 +471,7 @@ impl<'a> Transpiler<'a> {
                 let is_resource = if let Some(reg) = &self.registry {
                     reg.find_resource(k).is_some()
                 } else {
-                    matches!(v, serde_yaml::Value::Mapping(_)) && !matches!(k.as_str(), "labels" | "metadata" | "annotations" | "org_id" | "org" | "folder_id")
+                    false // Without registry, we can't verify, so be conservative
                 };
 
                 if is_resource { continue; }
@@ -571,6 +571,17 @@ impl<'a> Transpiler<'a> {
         for resource_type in sorted_types {
             let value = extra.get(resource_type).unwrap();
 
+            // Skip known non-resource keys
+            if resource_type == "variables" {
+                continue;
+            }
+
+            // Only treat Mapping values as potential resources (attributes/variables are usually simple values)
+            // Skip if value is not a Mapping or Sequence (which would indicate it's not a resource)
+            if !matches!(value, serde_yaml::Value::Mapping(_) | serde_yaml::Value::Sequence(_)) {
+                continue;
+            }
+
             // Handle CEX_ prefix for "compact" resources that need explosion
             if resource_type.starts_with("CEX_") {
                 let actual_type = &resource_type[4..];
@@ -633,10 +644,18 @@ impl<'a> Transpiler<'a> {
                         format!("google_{}", resource_type)
                     };
                     (resolved_name, Some(schema))
-                } else if resource_type.starts_with("google_") {
-                    (resource_type.to_string(), None)
                 } else {
-                    (format!("google_{}", resource_type), None)
+                    // Resource type not found in registry - only generate error if value is a Mapping/Sequence
+                    // (which would indicate it's meant to be a resource, not just an attribute)
+                    let resolved_name = if resource_type.starts_with("google_") {
+                        resource_type.to_string()
+                    } else {
+                        format!("google_{}", resource_type)
+                    };
+                    if matches!(value, serde_yaml::Value::Mapping(_) | serde_yaml::Value::Sequence(_)) {
+                        eprintln!("Error: Unknown resource type '{}' (resolved as '{}'). This resource type does not exist in the Terraform provider schema. Please check the resource name or use a valid Terraform resource type.", resource_type, resolved_name);
+                    }
+                    (resolved_name, None)
                 }
             } else if resource_type.starts_with("google_") {
                 (resource_type.to_string(), None)
@@ -894,8 +913,19 @@ impl<'a> Transpiler<'a> {
 
         for (k, v) in &final_attrs {
             if let serde_yaml::Value::String(k_str) = k {
-                if (tf_type == "google_org_policy_policy" && (k_str == "name" || k_str == "constraint" || k_str == "parent")) ||
-                   ["project", "project_id", "folder", "folder_id", "org_id", "organization", "import-id", "import-existing"].contains(&k_str.as_str()) {
+                // Skip fields that were handled specially, but only if they were auto-injected
+                // If they were explicitly provided in the YAML, we should process them
+                let was_explicitly_provided = attrs.contains_key(k);
+                let should_skip = if tf_type == "google_org_policy_policy" && (k_str == "name" || k_str == "constraint" || k_str == "parent") {
+                    true
+                } else if ["project", "project_id", "folder", "folder_id", "org_id", "organization", "import-id", "import-existing"].contains(&k_str.as_str()) {
+                    // Only skip if it was auto-injected, not if explicitly provided
+                    !was_explicitly_provided
+                } else {
+                    false
+                };
+                
+                if should_skip {
                     continue;
                 }
 
@@ -1201,7 +1231,33 @@ impl<'a> Transpiler<'a> {
         }
     }
 
+    fn resolve_anchor_reference(&self, v: &serde_yaml::Value) -> Option<serde_yaml::Value> {
+        // Check if the value is a string that looks like an anchor reference (starts with *)
+        if let serde_yaml::Value::String(s) = v {
+            if s.starts_with('*') {
+                let anchor_name = s.strip_prefix('*')?;
+                // Look up the anchor in the variables map
+                if let Some(resolved_value) = self.variables.get(anchor_name) {
+                    return Some(resolved_value.clone());
+                } else {
+                    // Anchor reference found but not resolved - this is an error
+                    eprintln!("Warning: Anchor reference '*{}' was not found in variables. The anchor may not be defined or may not be in the 'variables' section.", anchor_name);
+                    return None;
+                }
+            }
+        }
+        None
+    }
+
     fn yaml_to_hcl_value(&self, v: &serde_yaml::Value) -> Option<hcl::Expression> {
+        // First, try to resolve anchor references
+        let v = if let Some(resolved) = self.resolve_anchor_reference(v) {
+            // If we resolved an anchor, recursively process the resolved value
+            return self.yaml_to_hcl_value(&resolved);
+        } else {
+            v
+        };
+        
         match v {
             serde_yaml::Value::Tagged(tagged) if tagged.tag == "!expr" => {
                 if let serde_yaml::Value::String(s) = &tagged.value {
