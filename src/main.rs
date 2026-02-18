@@ -272,7 +272,7 @@ enum Commands {
 }
 
 /// User-level settings for cfg2hcl in ~/.config/cfg2hcl/cfg2hcl.toml. Created on first run with defaults.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct GlobalSettings {
     /// When to check for updates: "never", "always", "daily". Default "always".
     #[serde(default = "default_self_update_frequency")]
@@ -280,6 +280,15 @@ struct GlobalSettings {
     /// Last time we ran an update check (unix timestamp string). Used for "daily" throttle.
     #[serde(skip_serializing_if = "Option::is_none")]
     last_update_check: Option<String>,
+}
+
+impl Default for GlobalSettings {
+    fn default() -> Self {
+        Self {
+            self_update_frequency: default_self_update_frequency(),
+            last_update_check: None,
+        }
+    }
 }
 
 fn default_self_update_frequency() -> String {
@@ -328,6 +337,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cfg2hcl v{} (built {})", env!("CARGO_PKG_VERSION"), env!("BUILD_DATE"));
     let cli = Cli::parse();
 
+    // Load/create global settings on first run (creates ~/.config/cfg2hcl/cfg2hcl.toml with defaults)
+    let mut global_settings = load_global_settings();
+
     let cmd_choice = match cli.command {
         Some(c) => c,
         None => {
@@ -363,8 +375,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // Optional: check for updates per global settings (first-run creates ~/.config/cfg2hcl/cfg2hcl.toml with defaults)
-    let mut global_settings = load_global_settings();
+    // Optional: check for updates per global settings (skip for SelfUpdate and Init)
     if !matches!(cmd_choice, Commands::SelfUpdate { .. } | Commands::Init { .. }) {
         let _ = maybe_check_for_updates(&mut global_settings).await;
     }
