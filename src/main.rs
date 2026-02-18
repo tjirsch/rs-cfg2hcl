@@ -271,7 +271,7 @@ enum Commands {
     GetPresets,
 }
 
-/// User-level settings for cfg2hcl (e.g. ~/.config/cfg2hcl.toml). Created on first run when needed.
+/// User-level settings for cfg2hcl in ~/.config/cfg2hcl/cfg2hcl.toml. Created on first run with defaults.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct GlobalSettings {
     /// When to check for updates: "never", "always", "daily". Default "always".
@@ -288,19 +288,26 @@ fn default_self_update_frequency() -> String {
 
 fn global_settings_path() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
-    Some(PathBuf::from(home).join(".config").join("cfg2hcl.toml"))
+    Some(PathBuf::from(home).join(".config").join("cfg2hcl").join("cfg2hcl.toml"))
 }
 
+/// Load global settings. If the file does not exist, create ~/.config/cfg2hcl/cfg2hcl.toml with default values.
 fn load_global_settings() -> GlobalSettings {
     let path = match global_settings_path() {
         Some(p) => p,
         None => return GlobalSettings::default(),
     };
-    let content = match fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(_) => return GlobalSettings::default(),
-    };
-    toml::from_str(&content).unwrap_or_default()
+    if path.exists() {
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => return GlobalSettings::default(),
+        };
+        return toml::from_str(&content).unwrap_or_default();
+    }
+    // First run: create directory and write defaults
+    let defaults = GlobalSettings::default();
+    let _ = save_global_settings(&defaults);
+    defaults
 }
 
 fn save_global_settings(settings: &GlobalSettings) -> Result<(), Box<dyn std::error::Error>> {
@@ -356,7 +363,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // Optional: check for updates per global settings (first-run creates ~/.config/cfg2hcl.toml when saving)
+    // Optional: check for updates per global settings (first-run creates ~/.config/cfg2hcl/cfg2hcl.toml with defaults)
     let mut global_settings = load_global_settings();
     if !matches!(cmd_choice, Commands::SelfUpdate { .. } | Commands::Init { .. }) {
         let _ = maybe_check_for_updates(&mut global_settings).await;

@@ -23,13 +23,15 @@ These options can be placed anywhere in the command (e.g., before or after subco
 - `--validation <LEVEL>`: Validation level for mandatory parameters (`warn`, `error`, `none`). Default from project config or `warn`.
 - `--verbose`: Enable verbose output. When invoked without a subcommand (e.g. `cfg2hcl --verbose`), prints full recursive help listing all subcommands and their options.
 
-### User settings (~/.config/cfg2hcl.toml)
+### User settings (~/.config/cfg2hcl/cfg2hcl.toml)
 
-User-level settings for the **cfg2hcl program** (not per-project) live in **`~/.config/cfg2hcl.toml`**. This file is **created on first run when the program needs to persist something** (e.g. after a daily update check). If the file is missing, defaults are used and no file is written until needed.
+User-level **parameters** (e.g. when to check for updates) live in **`~/.config/cfg2hcl/cfg2hcl.toml`**. This file is **created on first run** with default values (e.g. `self_update_frequency = "always"`). If the file is missing on load, it is created with defaults.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `self_update_frequency` | `"always"` | When to check for updates on normal runs: `never` (no check), `always` (check every run), or `daily` (check at most once per 24 hours). The check is check-only (no install, no README). |
+| `self_update_frequency` | `"always"` | When to check for updates on normal runs: `never`, `always`, or `daily` (at most once per 24 hours). The check is check-only (no install, no README). |
+
+**Project config** (paths, providers, etc.) stays in **`config.toml`** per project; see [Configuration](#configuration) below.
 
 Example (optional; the file is created automatically when needed):
 
@@ -314,15 +316,18 @@ cfg2hcl get-presets
 Check for and install a new release from GitHub. After a successful install, the tool downloads the release README and prints its full path, then opens it unless you pass the options below.
 
 ```bash
-cfg2hcl self-update [options]
+# Check for and install a new release (same installer as curl)
+cfg2hcl self-update
+
+# Only check if an update is available (no install, no README)
+cfg2hcl self-update --check-only
+
+# Skip downloading README after install, or skip opening it
+cfg2hcl self-update --no-download-readme
+cfg2hcl self-update --no-download-readme --no-open-readme
 ```
 
-**Parameters:**
-- `--no-download-readme`: Do not download README.md after installing.
-- `--no-open-readme`: Download README and print its path, but do not open it (only applies if download runs).
-- `--check-only`: Only check if an update is available; do not install or download README.
-
-Automatic update checks when running other commands are controlled by the **User settings** file `~/.config/cfg2hcl.toml` (see section *User settings (~/.config/cfg2hcl.toml)* above); set `self_update_frequency` to `never`, `always`, or `daily`.
+**Self-update options:** `--no-download-readme`, `--no-open-readme`, `--check-only`. The program can also check for updates automatically when you run other commands; this is controlled by the [user settings](#user-settings-configcfg2hclcfg2hcltoml) file `~/.config/cfg2hcl/cfg2hcl.toml` (`self_update_frequency`: `never`, `always`, or `daily`).
 
 **Under the Hood:**
 - Fetches the latest release from the GitHub API, compares versions, and runs the cargo-dist installer script when a newer version is available. On success, optionally downloads `README.md` from the repo and prints its path (e.g. `README: /Users/you/Downloads/cfg2hcl-0.4.9-README.md`).
@@ -502,7 +507,7 @@ cfg2hcl update-schema --providers google,google-beta
 There are two separate configuration concepts:
 
 1. **Project config** (`config.toml`) — per-project paths and provider settings (see below).
-2. **User settings** (`~/.config/cfg2hcl.toml`) — user-level program behavior (e.g. update checks); see [Global Options → User settings](#global-options).
+2. **User settings** (`~/.config/cfg2hcl/cfg2hcl.toml`) — user-level program behavior (e.g. update checks); see [Global Options → User settings](#global-options).
 
 ### Project config (config.toml)
 
@@ -519,6 +524,13 @@ Per-project settings are read from **`config.toml`** in the project root (or the
 | `provider_version` | `"7.12.0"` | Provider version to use |
 | `auto_explode` | `["google_project_service", ".*_iam_member"]` | Resources that use compact explosion |
 | `validation_level` | `"warn"` | Validation level for mandatory parameters |
+
+### File locations
+
+| Path | Description |
+|------|-------------|
+| `~/.config/cfg2hcl/cfg2hcl.toml` | User parameters (e.g. `self_update_frequency`). Created on first run with defaults. |
+| `config.toml` | Project config (paths, providers). Per project; use `--config` to override path. |
 
 ## Schema Validation
 
