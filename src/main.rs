@@ -263,7 +263,57 @@ enum Commands {
         /// Do not open README.md after downloading (only applies if download runs)
         #[arg(long)]
         no_open_readme: bool,
+        /// Only check if an update is available; do not install or download README
+        #[arg(long)]
+        check_only: bool,
     },
+    /// Download the presets folder from the repo into yaml_dir/presets
+    GetPresets,
+}
+
+/// User-level settings for cfg2hcl (e.g. ~/.config/cfg2hcl.toml). Created on first run when needed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct GlobalSettings {
+    /// When to check for updates: "never", "always", "daily". Default "always".
+    #[serde(default = "default_self_update_frequency")]
+    self_update_frequency: String,
+    /// Last time we ran an update check (unix timestamp string). Used for "daily" throttle.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_update_check: Option<String>,
+}
+
+fn default_self_update_frequency() -> String {
+    "always".to_string()
+}
+
+fn global_settings_path() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    Some(PathBuf::from(home).join(".config").join("cfg2hcl.toml"))
+}
+
+fn load_global_settings() -> GlobalSettings {
+    let path = match global_settings_path() {
+        Some(p) => p,
+        None => return GlobalSettings::default(),
+    };
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return GlobalSettings::default(),
+    };
+    toml::from_str(&content).unwrap_or_default()
+}
+
+fn save_global_settings(settings: &GlobalSettings) -> Result<(), Box<dyn std::error::Error>> {
+    let path = match global_settings_path() {
+        Some(p) => p,
+        None => return Err("HOME not set".into()),
+    };
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let toml = toml::to_string_pretty(settings)?;
+    std::fs::write(&path, toml)?;
+    Ok(())
 }
 
 #[tokio::main]
@@ -295,7 +345,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             // Config is mandatory for Transpile and other commands that need it
             match cmd_choice {
-                Commands::Transpile { .. } | Commands::ScanPlan { .. } | Commands::GenerateMigration { .. } | Commands::UpdateSchema { .. } | Commands::DiscoverFromState { .. } | Commands::DiscoverFromOrganization { .. } | Commands::Migrate { .. } | Commands::Bootstrap { .. } => {
+                Commands::Transpile { .. } | Commands::ScanPlan { .. } | Commands::GenerateMigration { .. } | Commands::UpdateSchema { .. } | Commands::DiscoverFromState { .. } | Commands::DiscoverFromOrganization { .. } | Commands::Migrate { .. } | Commands::Bootstrap { .. } | Commands::GetPresets => {
                     return Err("Config file 'config.toml' not found in current directory. Please provide it or specify --config <PATH>.".into());
                 }
                 Commands::Init { .. } | Commands::SelfUpdate { .. } => {
@@ -305,6 +355,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     };
+
+    // Optional: check for updates per global settings (first-run creates ~/.config/cfg2hcl.toml when saving)
+    let mut global_settings = load_global_settings();
+    if !matches!(cmd_choice, Commands::SelfUpdate { .. } | Commands::Init { .. }) {
+        let _ = maybe_check_for_updates(&mut global_settings).await;
+    }
 
     let config_dir = config_file_path.parent().unwrap_or(Path::new(".")).to_path_buf();
 
@@ -878,9 +934,10 @@ Thumbs.db
             println!("Migration to {} mode complete.", target_mode);
             Ok(())
         }
-        Commands::SelfUpdate { no_download_readme, no_open_readme } => {
-            run_self_update(!no_download_readme, !no_open_readme).await
+        Commands::SelfUpdate { no_download_readme, no_open_readme, check_only } => {
+            run_self_update(!no_download_readme, !no_open_readme, check_only).await
         }
+        Commands::GetPresets => run_get_presets(&runtime_config.yaml_dir).await,
     }?;
 
     Ok(())
@@ -1111,51 +1168,146 @@ fn print_recursive_help(cmd: &mut clap::Command) {
 }
 
 
-async fn run_self_update(download_readme: bool, open_readme: bool) -> Result<(), Box<dyn std::error::Error>> {
-    const REPO: &str = "tjirsch/rs-cfg2hcl";
-    const API_URL: &str = "https://api.github.com/repos";
-    
-    let current_version = env!("CARGO_PKG_VERSION");
-    println!("Current version: {}", current_version);
-    
-    // Fetch latest release from GitHub
-    let client = reqwest::Client::builder()
-        .user_agent("cfg2hcl-update-checker")
-        .build()?;
-    
+const REPO: &str = "tjirsch/rs-cfg2hcl";
+const API_URL: &str = "https://api.github.com/repos";
+
+/// Fetches latest release from GitHub and returns (latest_version, html_url) if an update is available.
+async fn check_update_available(client: &reqwest::Client) -> Result<Option<(String, String)>, Box<dyn std::error::Error>> {
     let url = format!("{}/{}/releases/latest", API_URL, REPO);
     let response = client.get(&url).send().await?;
-    
     if !response.status().is_success() {
-        return Err(format!("Failed to fetch release info: {}", response.status()).into());
+        return Ok(None);
     }
-    
     #[derive(Deserialize)]
     struct Release {
         tag_name: String,
         html_url: String,
-        // assets: Vec<Asset>, // Reserved for future use (e.g., direct binary download)
     }
-    
-    // #[derive(Deserialize)]
-    // struct Asset {
-    //     name: String,
-    //     browser_download_url: String,
-    // }
-    
     let release: Release = response.json().await?;
-    
-    // Extract version from tag (remove 'v' prefix if present)
+    let latest_version = release.tag_name.trim_start_matches('v').to_string();
+    let current = env!("CARGO_PKG_VERSION");
+    if compare_versions(current, &latest_version) < 0 {
+        Ok(Some((latest_version, release.html_url)))
+    } else {
+        Ok(None)
+    }
+}
+
+/// If global settings say so, run a check-only update check and optionally persist last_update_check (daily).
+async fn maybe_check_for_updates(settings: &mut GlobalSettings) -> Result<(), Box<dyn std::error::Error>> {
+    let freq = settings.self_update_frequency.as_str();
+    if freq == "never" {
+        return Ok(());
+    }
+    if freq == "daily" {
+        if let Some(ref last) = settings.last_update_check {
+            let last_ts: u64 = last.parse().unwrap_or(0);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            if now.saturating_sub(last_ts) < 86400 {
+                return Ok(());
+            }
+        }
+    }
+    let client = reqwest::Client::builder()
+        .user_agent("cfg2hcl-update-checker")
+        .build()?;
+    let update = check_update_available(&client).await?;
+    if freq == "daily" {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        settings.last_update_check = Some(now.to_string());
+        let _ = save_global_settings(settings);
+    }
+    if let Some((version, url)) = update {
+        println!("⚠️  Update available: {} (current: {}). Run `cfg2hcl self-update` to install. {}", version, env!("CARGO_PKG_VERSION"), url);
+    }
+    Ok(())
+}
+
+/// Download the presets folder from the repo into yaml_dir/presets (creates subdirs as needed).
+async fn run_get_presets(yaml_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::builder()
+        .user_agent("cfg2hcl-get-presets")
+        .build()?;
+    let presets_base = PathBuf::from(yaml_dir).join("presets");
+    std::fs::create_dir_all(&presets_base)?;
+    let mut count = 0u32;
+    let mut queue: Vec<(String, PathBuf)> = vec![("presets".to_string(), presets_base.clone())];
+    while let Some((api_path, local_base)) = queue.pop() {
+        let url = format!("{}/{}/contents/{}?ref=main", API_URL, REPO, api_path);
+        let items: Vec<ContentItem> = client.get(&url).send().await?.json().await?;
+        for item in items {
+            if item.typ == "file" {
+                if let Some(download_url) = &item.download_url {
+                    let content = client.get(download_url).send().await?.bytes().await?;
+                    let dest = local_base.join(&item.name);
+                    if let Some(p) = dest.parent() {
+                        std::fs::create_dir_all(p)?;
+                    }
+                    std::fs::write(&dest, &content)?;
+                    count += 1;
+                }
+            } else if item.typ == "dir" {
+                let sub_base = local_base.join(&item.name);
+                std::fs::create_dir_all(&sub_base)?;
+                queue.push((item.path, sub_base));
+            }
+        }
+    }
+    println!("Downloaded {} preset file(s) to {}", count, presets_base.display());
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct ContentItem {
+    #[serde(rename = "type")]
+    typ: String,
+    name: String,
+    path: String,
+    #[serde(default)]
+    download_url: Option<String>,
+}
+
+async fn run_self_update(download_readme: bool, open_readme: bool, check_only: bool) -> Result<(), Box<dyn std::error::Error>> {
+
+    let current_version = env!("CARGO_PKG_VERSION");
+    println!("Current version: {}", current_version);
+
+    let client = reqwest::Client::builder()
+        .user_agent("cfg2hcl-update-checker")
+        .build()?;
+
+    let url = format!("{}/{}/releases/latest", API_URL, REPO);
+    let response = client.get(&url).send().await?;
+
+    if !response.status().is_success() {
+        return Err(format!("Failed to fetch release info: {}", response.status()).into());
+    }
+
+    #[derive(Deserialize)]
+    struct Release {
+        tag_name: String,
+        html_url: String,
+    }
+
+    let release: Release = response.json().await?;
     let latest_version = release.tag_name.trim_start_matches('v');
-    
     println!("Latest version: {}", latest_version);
-    
-    // Simple version comparison (semver comparison)
+
     if compare_versions(current_version, latest_version) < 0 {
         println!("\n⚠️  A new version is available!");
         println!("   Current: {}", current_version);
         println!("   Latest:  {}", latest_version);
         println!("   Release: {}", release.html_url);
+        if check_only {
+            println!("\nRun `cfg2hcl self-update` to install.");
+            return Ok(());
+        }
         println!("\n📥 Installing update...");
         
         // Find the installer script
