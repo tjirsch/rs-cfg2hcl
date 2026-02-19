@@ -86,7 +86,7 @@ All commands accept the [global options](#global-options) (`--config`, `--valida
 |---------|---------------------|
 | `init` | `--defaults`, `--providers`, `--tf-tool`, `--customer-id`, `--customer-shortname`, `--billing-account-infra`, `--customer-organization-id`, `--customer-domain`, `--iac-user`, `--default-region`, `--infra-project-name`, `--infra-bucket-name` |
 | `bootstrap <CONFIG_FILE>` | `--dry-run` |
-| `transpile <INPUT>` | `--output`, `--schema-dir` |
+| `transpile <INPUT>` | `--output`, `--schema-dir`, `--print-variables` |
 | `scan-plan <plan_json>` | `--output` (default: `mapping.yaml`) |
 | `generate-migration <mapping>` | `--output` (default: `migrate.sh`) |
 | `update-schema` | `--providers`, `--version`, `--tf-tool` |
@@ -167,6 +167,7 @@ cfg2hcl transpile <INPUT> [options]
 - `<INPUT>`: Name of the input YAML file. This is resolved relative to the `yaml_dir` defined in your config.
 - `--output, -o <FILE>`: Optional output subdirectory or absolute path. By default, output goes to `hcl_dir`.
 - `--schema-dir, -s <DIR>`: Override the schema directory.
+- `--print-variables`: After transpilation, print the fully resolved variable table as YAML to stdout. Useful for debugging variable resolution across multiple include files.
 
 **Running from subdirectories:**
 You can run the transpile command from any directory (e.g., from within the `hcl/` folder) by specifying the config path. Both styles are supported:
@@ -180,9 +181,10 @@ cfg2hcl transpile my-infra.yaml --config ../config.toml
 This will correctly look for `../yaml/my-infra.yaml` and update the files in the current directory.
 
 **Under the Hood:**
-- Reads the YAML file and processes any `!include` tags.
-- strict Validation: Checks the YAML against the loaded provider schemas `schemas/*.json` to ensure all required fields are present.
-- Merges variables from the `variables` block into the configuration.
+- Reads the YAML file and processes any `!include` tags recursively.
+- Collects all `variables:` blocks found anywhere in the document tree (including from included files) into a single global variable table. The main file's `variables:` block takes precedence over variables from included files on key conflicts.
+- Strict validation: Checks the YAML against the loaded provider schemas `schemas/*.json` to ensure all required fields are present.
+- Merges variables from the global variable table into the configuration.
 - Generates four files in the output directory:
     - `main.tf`: Resources.
     - `providers.tf`: Provider configurations and aliases.
@@ -482,7 +484,7 @@ providers:
 ```
 
 ### Variables
-Declare variables in a `variables` block. They are automatically merged to the root context and can be used with YAML anchors.
+Declare variables in a `variables` block. They are automatically merged to the root context and can be referenced anywhere in the file with YAML anchors.
 
 ```yaml
 variables:
@@ -495,6 +497,42 @@ google_project:
 ```
 - Variables are declared as `string` types in `_variables.tf`.
 - Values are written to `.tfvars`.
+
+#### Variables in Included Files
+
+`variables:` blocks defined inside included files are merged into the same global variable table. This works for both include forms:
+
+```yaml
+# shared-vars.yaml — a standalone include (Form A)
+variables:
+  shared-region: &shared-region "europe-west3"
+  shared-project: &shared-project "my-infra-project"
+```
+
+```yaml
+# main.yaml
+!include shared-vars.yaml
+
+variables:
+  customer-id: &customer-id "C01234567"  # overrides any same-named key from includes
+
+google_project:
+  my-project:
+    project_id: *shared-project   # resolved from shared-vars.yaml
+    region: *shared-region
+```
+
+**Priority rules:**
+- The main file's `variables:` block has the **highest** priority.
+- Variables from Form A included files (inserted at the root level) have medium priority.
+- Variables from Form B included files (`key: !include file.yaml`, nested under a key) have the lowest priority.
+- On key conflicts, shallower (closer to root) definitions always win.
+
+Use `--print-variables` to inspect the resolved variable table after a transpile:
+
+```bash
+cfg2hcl transpile my-infra.yaml --print-variables
+```
 
 ### 3. Update Schemas
 Refresh provider schemas manually.
@@ -545,7 +583,11 @@ You can control the strictness via CLI `--validation` or `config.toml`.
 
 ### Custom YAML Tags
 Enhance your configuration with dynamic logic:
-- **`!include <file>`**: Recursively include other YAML snippets.
+- **`!include <file>`**: Recursively include other YAML snippets. Two forms are supported:
+  - **Form A** — standalone, inserts content at the same level: `!include shared.yaml`
+  - **Form B** — under a key, inserts content indented under that key: `defaults: !include defaults.yaml`
+
+  `variables:` blocks in included files are automatically hoisted into the global variable table regardless of which form is used. See [Variables in Included Files](#variables-in-included-files) for details.
 - **`!format [template, arg1, arg2]`**: Dynamic string formatting using placeholders (`{}`).
   ```yaml
   member: !format
