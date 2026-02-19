@@ -1,8 +1,9 @@
 #
-# Copy or include
+# Copy or include ONLY if inclusion in defintions is not early enough
 #
-gcp-organization-admins-name: &gcp-organization-admins-name "gcp-organization-admins"
-gcp-project-admins-name:      &gcp-project-admins-name      "gcp-project-admins"
-gcp-security-admins-name:     &gcp-security-admins-name     "gcp-security-admins"
-gcp-security-viewers-name:    &gcp-security-viewers-name    "gcp-security-viewers"
-gcp-billing-admins-name:      &gcp-billing-admins-name      "gcp-billing-admins"    
+variables:
+  gcp-organization-admins-name: &gcp-organization-admins-name "gcp-organization-admins"
+  gcp-project-admins-name:      &gcp-project-admins-name      "gcp-project-admins"
+  gcp-security-admins-name:     &gcp-security-admins-name     "gcp-security-admins"
+  gcp-security-viewers-name:    &gcp-security-viewers-name    "gcp-security-viewers"
+  gcp-billing-admins-name:      &gcp-billing-admins-name      "gcp-billing-admins"

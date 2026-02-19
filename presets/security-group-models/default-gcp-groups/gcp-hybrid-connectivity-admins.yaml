@@ -1,4 +1,0 @@
-# gcp-hybrid-connectivity-admins
-# Hybrid Connectivity administrators are responsible for creating network devices such as Cloud VPN instances and cloud routers.
-roles/compute.networkAdmin
-roles/resourcemanager.folderViewer

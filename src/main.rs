@@ -138,6 +138,9 @@ enum Commands {
         /// Schema directory containing provider JSON files
         #[arg(long)]
         schema_dir: Option<PathBuf>,
+        /// Print all resolved variables as YAML to stdout after transpilation
+        #[arg(long)]
+        print_variables: bool,
     },
     /// Scan Tofu plan JSON for resource renames
     ScanPlan {
@@ -353,7 +356,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 
     match cmd_choice {
-        Commands::Transpile { input, output, schema_dir } => {
+        Commands::Transpile { input, output, schema_dir, print_variables } => {
             let validation_level = cli.validation.unwrap_or(tool_config.validation_level.clone());
 
             let input_path = if Path::new(&input).is_absolute() {
@@ -393,6 +396,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let registry = ResourceRegistry::load_all(s_dir.to_str().unwrap_or("schemas"))?;
 
             let variables = extract_variables(&raw_value_for_vars);
+            let variables_snapshot = if print_variables { Some(variables.clone()) } else { None };
 
             let mut provider_sources = HashMap::new();
             let mut provider_versions = HashMap::new();
@@ -479,6 +483,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             write_file("variables.tf", &project.variables_tf)?;
             write_file("terraform.tfvars", &project.tfvars)?;
             write_file("imports.tf", &project.imports_tf)?;
+
+            if let Some(vars) = variables_snapshot {
+                let vars_map: serde_yaml::Mapping = vars
+                    .into_iter()
+                    .map(|(k, v)| (serde_yaml::Value::String(k), v))
+                    .collect();
+                print!("{}", serde_yaml::to_string(&serde_yaml::Value::Mapping(vars_map))?);
+            }
+
             Ok::<(), Box<dyn std::error::Error>>(())
         }
         Commands::Init {
@@ -887,23 +900,88 @@ Thumbs.db
 }
 
 fn extract_variables(value: &serde_yaml::Value) -> HashMap<String, serde_yaml::Value> {
-    if let serde_yaml::Value::Mapping(map) = value {
-        if let Some(serde_yaml::Value::Mapping(variables)) = map.get("variables") {
-             let mut vars = HashMap::new();
-             for (k, v) in variables {
-                 if let serde_yaml::Value::String(k_str) = k {
-                     vars.insert(k_str.clone(), v.clone());
-                 }
-             }
-             return vars;
+    let mut vars = HashMap::new();
+    collect_variables_recursive(value, &mut vars);
+    vars
+}
+
+fn is_variables_key(k: &serde_yaml::Value) -> bool {
+    k.as_str().map_or(false, |s| {
+        s == "variables" || s.starts_with(include_processor::INCLUDE_VARS_PREFIX)
+    })
+}
+
+fn extract_mapping_vars(variables: &serde_yaml::Mapping, vars: &mut HashMap<String, serde_yaml::Value>) {
+    for (k, v) in variables {
+        if let serde_yaml::Value::String(k_str) = k {
+            vars.insert(k_str.clone(), v.clone());
         }
     }
-    HashMap::new()
+}
+
+fn collect_variables_recursive(value: &serde_yaml::Value, vars: &mut HashMap<String, serde_yaml::Value>) {
+    if let serde_yaml::Value::Mapping(map) = value {
+        // Recurse into non-variable children first (lowest priority)
+        for (k, v) in map {
+            if !is_variables_key(k) {
+                collect_variables_recursive(v, vars);
+            }
+        }
+        // Apply renamed include vars (medium priority — overwritten by direct variables:)
+        for (k, v) in map {
+            if k.as_str().map_or(false, |s| s.starts_with(include_processor::INCLUDE_VARS_PREFIX)) {
+                if let serde_yaml::Value::Mapping(variables) = v {
+                    extract_mapping_vars(variables, vars);
+                }
+            }
+        }
+        // Apply direct variables: block last (highest priority at this level)
+        if let Some(serde_yaml::Value::Mapping(variables)) = map.get("variables") {
+            extract_mapping_vars(variables, vars);
+        }
+    } else if let serde_yaml::Value::Sequence(seq) = value {
+        for item in seq {
+            collect_variables_recursive(item, vars);
+        }
+    }
+}
+
+fn strip_variables_recursive(value: serde_yaml::Value) -> serde_yaml::Value {
+    match value {
+        serde_yaml::Value::Mapping(map) => {
+            let cleaned: serde_yaml::Mapping = map
+                .into_iter()
+                .filter_map(|(k, v)| {
+                    if is_variables_key(&k) {
+                        None
+                    } else {
+                        Some((k, strip_variables_recursive(v)))
+                    }
+                })
+                .collect();
+            serde_yaml::Value::Mapping(cleaned)
+        }
+        serde_yaml::Value::Sequence(seq) => {
+            serde_yaml::Value::Sequence(seq.into_iter().map(strip_variables_recursive).collect())
+        }
+        other => other,
+    }
 }
 
 fn merge_variables(value: serde_yaml::Value) -> serde_yaml::Value {
+    // Collect top-level variables before stripping so they can be promoted to root
+    let top_level_vars = if let serde_yaml::Value::Mapping(ref map) = value {
+        map.get("variables").and_then(|v| {
+            if let serde_yaml::Value::Mapping(m) = v { Some(m.clone()) } else { None }
+        })
+    } else {
+        None
+    };
+
+    let value = strip_variables_recursive(value);
+
     if let serde_yaml::Value::Mapping(mut map) = value {
-        if let Some(serde_yaml::Value::Mapping(variables)) = map.remove("variables") {
+        if let Some(variables) = top_level_vars {
             for (k, v) in variables {
                 if !map.contains_key(&k) {
                     map.insert(k, v);
@@ -1318,21 +1396,31 @@ fn compare_versions(v1: &str, v2: &str) -> i32 {
 
 fn print_yaml_error_context(content: &str, err: &serde_yaml::Error) {
     if let Some(location) = err.location() {
-        let line_idx = location.line() - 1; 
+        let line_idx = location.line() - 1;
         let lines: Vec<&str> = content.lines().collect();
 
         if line_idx < lines.len() {
-             eprintln!("\nError context (line {}):", line_idx + 1);
-             eprintln!("--------------------------------------------------");
-             
-             let start = usize::max(0, line_idx.saturating_sub(2));
-             let end = usize::min(lines.len() - 1, line_idx + 2);
-             
-             for i in start..=end {
-                 let marker = if i == line_idx { ">>" } else { "  " };
-                 eprintln!("{} {:4} | {}", marker, i + 1, lines[i]);
-             }
-             eprintln!("--------------------------------------------------\n");
+            // Scan backward from the error line to find the nearest cfg2hcl:source: annotation
+            let source_file = lines[..=line_idx]
+                .iter()
+                .rev()
+                .find_map(|l| l.trim().strip_prefix("# cfg2hcl:source: "));
+
+            if let Some(src) = source_file {
+                eprintln!("\nError in included file: {}", src);
+            }
+
+            eprintln!("\nError context (line {}):", line_idx + 1);
+            eprintln!("--------------------------------------------------");
+
+            let start = usize::max(0, line_idx.saturating_sub(2));
+            let end = usize::min(lines.len() - 1, line_idx + 2);
+
+            for i in start..=end {
+                let marker = if i == line_idx { ">>" } else { "  " };
+                eprintln!("{} {:4} | {}", marker, i + 1, lines[i]);
+            }
+            eprintln!("--------------------------------------------------\n");
         }
     }
 }

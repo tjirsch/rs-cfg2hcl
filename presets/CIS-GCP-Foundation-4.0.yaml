@@ -147,8 +147,6 @@ compute-managed-vmCanIpForward:
 
 compute-managed-vmExternalIpAccess:
   name: compute.managed.vmExternalIpAccess
-  email: !format ["{}@{}", "essential-contacts-all", *customer-domain]
-
   # import-id: !format ["organizations/{}/policies/{}", *customer-organization-id,"compute.managed.vmExternalIpAccess"]
   parent: !format ["organizations/{}", *customer-organization-id]
   spec:

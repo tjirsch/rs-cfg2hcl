@@ -1,5 +1,0 @@
-# gcp-logging-monitoring-admins
-# Logging-monitoring administrators have access to all features of Logging and Cloud Monitoring.
-roles/logging.admin
-roles/monitoring.admin
-roles/pubsub.admin
