@@ -48,6 +48,14 @@ After a successful install, the tool downloads the release README and prints its
 
 - `--no-download-readme`: do not download README after installing.
 - `--no-open-readme`: download README and print its path, but do not open it.
+- `--check-only`: only check if an update is available; do not install or download README.
+
+### Global settings (optional)
+
+User-level settings live in `~/.config/cfg2hcl.toml`. The file is created on first run when the program needs to persist settings (e.g. after a daily update check).
+
+- `self_update_frequency`: when to check for updates on normal runs: `never`, `always`, or `daily`. Default `always`. With `daily`, the last check time is stored in the same file and the check runs at most once per 24 hours.
+- The automatic check is check-only (no install, no README); it prints one line if an update is available.
 
 ## Releasing
 

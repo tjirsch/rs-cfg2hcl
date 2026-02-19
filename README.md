@@ -19,9 +19,25 @@ customer-repo/ (e.g. project-root/)
 
 These options can be placed anywhere in the command (e.g., before or after subcommands):
 
-- `-c, --config <FILE>`: Path to tool config file. Mandatory for most commands if `config.toml` is not in the current directory.
-- `-v, --validation <LEVEL>`: Validation level for mandatory parameters (`warn`, `error`, `none`).
+- `--config <FILE>`: Path to the **project** config file (`config.toml`). Mandatory for most commands if `config.toml` is not in the current directory.
+- `--validation <LEVEL>`: Validation level for mandatory parameters (`warn`, `error`, `none`). Default from project config or `warn`.
 - `--verbose`: Enable verbose output. When invoked without a subcommand (e.g. `cfg2hcl --verbose`), prints full recursive help listing all subcommands and their options.
+
+### User settings (~/.config/cfg2hcl/cfg2hcl.toml)
+
+User-level **parameters** (e.g. when to check for updates) live in **`~/.config/cfg2hcl/cfg2hcl.toml`**. This file is **created on first run** with default values (e.g. `self_update_frequency = "always"`). If the file is missing on load, it is created with defaults.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `self_update_frequency` | `"always"` | When to check for updates on normal runs: `never`, `always`, or `daily` (at most once per 24 hours). The check is check-only (no install, no README). |
+
+**Project config** (paths, providers, etc.) stays in **`config.toml`** per project; see [Configuration](#configuration) below.
+
+Example (optional; the file is created automatically when needed):
+
+```toml
+self_update_frequency = "daily"
+```
 
 ## Installation
 
@@ -63,6 +79,24 @@ cargo install --path .
 This installs to `~/.cargo/bin` (no sudo required).
 
 ## CLI Usage
+
+All commands accept the [global options](#global-options) (`--config`, `--validation`, `--verbose`). Commands and their options:
+
+| Command | Options / Arguments |
+|---------|---------------------|
+| `init` | `--defaults`, `--providers`, `--tf-tool`, `--customer-id`, `--customer-shortname`, `--billing-account-infra`, `--customer-organization-id`, `--customer-domain`, `--iac-user`, `--default-region`, `--infra-project-name`, `--infra-bucket-name` |
+| `bootstrap <CONFIG_FILE>` | `--dry-run` |
+| `transpile <INPUT>` | `--output`, `--schema-dir` |
+| `scan-plan <plan_json>` | `--output` (default: `mapping.yaml`) |
+| `generate-migration <mapping>` | `--output` (default: `migrate.sh`) |
+| `update-schema` | `--providers`, `--version`, `--tf-tool` |
+| `discover-from-state` | `--state-json`, `--output`, `--add-import-id`, `--add-import-id-as-comment`, `--discovery-config` |
+| `discover-from-organization` | `--customer-organization-id` (required), `--output`, `--add-import-id`, `--add-import-id-as-comment`, `--discovery-config` |
+| `migrate <INPUT>` | `--mode` |
+| `get-presets` | *(none; uses `yaml_dir` from config)* |
+| `self-update` | `--no-download-readme`, `--no-open-readme`, `--check-only` |
+
+Details for each command are below.
 
 ### Initialize Project (`init`)
 Bootstrap a new project directory with default folders, config, .gitignore, and schemas.
@@ -266,16 +300,34 @@ cfg2hcl update-schema --providers google,google-beta
 - runs `tofu providers schema -json` to export the latest definitions.
 - Updates the JSON files in `schemas/`.
 
+### Get presets (`get-presets`)
+Download the `presets` folder from the repository into a `presets` subfolder of your project's `yaml_dir` (from `config.toml`). Requires a valid config so the tool knows where to write files.
+
+```bash
+cfg2hcl get-presets
+```
+
+**Parameters:** None (uses `yaml_dir` from project config). Accepts global options `--config`, `--validation`, `--verbose`.
+
+**Under the Hood:**
+- Fetches the contents of the `presets` directory from the GitHub repo (main branch) via the API and writes each file under `yaml_dir/presets/`, preserving subdirectories (e.g. `presets/security-group-models/`, `presets/discovery-config.yaml`).
+
 ### Self-update (`self-update`)
 Check for and install a new release from GitHub. After a successful install, the tool downloads the release README and prints its full path, then opens it unless you pass the options below.
 
 ```bash
-cfg2hcl self-update [options]
+# Check for and install a new release (same installer as curl)
+cfg2hcl self-update
+
+# Only check if an update is available (no install, no README)
+cfg2hcl self-update --check-only
+
+# Skip downloading README after install, or skip opening it
+cfg2hcl self-update --no-download-readme
+cfg2hcl self-update --no-download-readme --no-open-readme
 ```
 
-**Parameters:**
-- `--no-download-readme`: Do not download README.md after installing.
-- `--no-open-readme`: Download README and print its path, but do not open it (only applies if download runs).
+**Self-update options:** `--no-download-readme`, `--no-open-readme`, `--check-only`. The program can also check for updates automatically when you run other commands; this is controlled by the [user settings](#user-settings-configcfg2hclcfg2hcltoml) file `~/.config/cfg2hcl/cfg2hcl.toml` (`self_update_frequency`: `never`, `always`, or `daily`).
 
 **Under the Hood:**
 - Fetches the latest release from the GitHub API, compares versions, and runs the cargo-dist installer script when a newer version is available. On success, optionally downloads `README.md` from the repo and prints its path (e.g. `README: /Users/you/Downloads/cfg2hcl-0.4.9-README.md`).
@@ -450,9 +502,16 @@ Refresh provider schemas manually.
 cfg2hcl update-schema --providers google,google-beta
 ```
 
-## Configuration (config.toml)
+## Configuration
 
-The tool reads its settings from `config.toml`. Default values are:
+There are two separate configuration concepts:
+
+1. **Project config** (`config.toml`) — per-project paths and provider settings (see below).
+2. **User settings** (`~/.config/cfg2hcl/cfg2hcl.toml`) — user-level program behavior (e.g. update checks); see [Global Options → User settings](#global-options).
+
+### Project config (config.toml)
+
+Per-project settings are read from **`config.toml`** in the project root (or the path given by `--config`). This file defines `yaml_dir`, `hcl_dir`, providers, and other project-specific options. Default values are:
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -465,6 +524,13 @@ The tool reads its settings from `config.toml`. Default values are:
 | `provider_version` | `"7.12.0"` | Provider version to use |
 | `auto_explode` | `["google_project_service", ".*_iam_member"]` | Resources that use compact explosion |
 | `validation_level` | `"warn"` | Validation level for mandatory parameters |
+
+### File locations
+
+| Path | Description |
+|------|-------------|
+| `~/.config/cfg2hcl/cfg2hcl.toml` | User parameters (e.g. `self_update_frequency`). Created on first run with defaults. |
+| `config.toml` | Project config (paths, providers). Per project; use `--config` to override path. |
 
 ## Schema Validation
 

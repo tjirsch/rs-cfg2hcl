@@ -1,0 +1,8 @@
+schema_dir = "schemas"
+yaml_dir = "yaml"
+hcl_dir = "hcl"
+include_dirs = [".", "yaml"]
+tf_tool = "tofu"
+provider_version = "7.12.0"
+auto_explode = ["google_project_service", ".*_iam_member"]
+validation_level = "warn"
