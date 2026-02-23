@@ -1,6 +1,6 @@
 [package]
 name = "cfg2hcl"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 authors = ["Thomas Jirsch"]
 description = "A tool to transpile compact YAML infrastructure definitions into OpenTofu/Terraform HCL. Bootstrap and migrate gcp organization."
