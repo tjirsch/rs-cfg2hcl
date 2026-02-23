@@ -7,6 +7,7 @@ mod template;
 mod bootstrap;
 
 use clap::{Parser, Subcommand, CommandFactory};
+use clap_complete::Shell as CompletionShell;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -272,6 +273,16 @@ enum Commands {
     },
     /// Download the presets folder from the repo into yaml_dir/presets
     GetPresets,
+    /// Download and open the latest README from the repository
+    OpenReadme,
+    /// Generate shell completion script
+    Completion {
+        /// Shell to generate completions for: bash, zsh, fish, powershell
+        shell: String,
+        /// Install the completion script to the default location for the shell
+        #[arg(long)]
+        install: bool,
+    },
 }
 
 /// User-level settings for cfg2hcl in ~/.config/cfg2hcl/cfg2hcl.toml. Created on first run with defaults.
@@ -283,6 +294,10 @@ struct GlobalSettings {
     /// Last time we ran an update check (unix timestamp string). Used for "daily" throttle.
     #[serde(skip_serializing_if = "Option::is_none")]
     last_update_check: Option<String>,
+    /// Preferred editor command for opening files (e.g. "code", "vim", "nano").
+    /// Falls back to $EDITOR env var, then the OS default app.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preferred_editor: Option<String>,
 }
 
 impl Default for GlobalSettings {
@@ -290,6 +305,7 @@ impl Default for GlobalSettings {
         Self {
             self_update_frequency: default_self_update_frequency(),
             last_update_check: None,
+            preferred_editor: None,
         }
     }
 }
@@ -370,8 +386,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Commands::Transpile { .. } | Commands::ScanPlan { .. } | Commands::GenerateMigration { .. } | Commands::UpdateSchema { .. } | Commands::DiscoverFromState { .. } | Commands::DiscoverFromOrganization { .. } | Commands::Migrate { .. } | Commands::Bootstrap { .. } | Commands::GetPresets => {
                     return Err("Config file 'config.toml' not found in current directory. Please provide it or specify --config <PATH>.".into());
                 }
-                Commands::Init { .. } | Commands::SelfUpdate { .. } => {
-                    // Init and SelfUpdate can proceed without a config file
+                Commands::Init { .. } | Commands::SelfUpdate { .. } | Commands::Completion { .. } | Commands::OpenReadme => {
+                    // Init, SelfUpdate, Completion and OpenReadme can proceed without a config file
                     PathBuf::from("config.toml")
                 }
             }
@@ -966,9 +982,11 @@ Thumbs.db
             Ok(())
         }
         Commands::SelfUpdate { no_download_readme, no_open_readme, check_only } => {
-            run_self_update(!no_download_readme, !no_open_readme, check_only).await
+            run_self_update(!no_download_readme, !no_open_readme, check_only, global_settings.preferred_editor.as_deref()).await
         }
         Commands::GetPresets => run_get_presets(&runtime_config.yaml_dir).await,
+        Commands::OpenReadme => run_open_readme(global_settings.preferred_editor.as_deref()).await,
+        Commands::Completion { shell, install } => run_completion(&shell, install),
     }?;
 
     Ok(())
@@ -1369,7 +1387,7 @@ struct ContentItem {
     download_url: Option<String>,
 }
 
-async fn run_self_update(download_readme: bool, open_readme: bool, check_only: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_self_update(download_readme: bool, open_readme: bool, check_only: bool, preferred_editor: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
 
     let current_version = env!("CARGO_PKG_VERSION");
     println!("Current version: {}", current_version);
@@ -1430,7 +1448,7 @@ async fn run_self_update(download_readme: bool, open_readme: bool, check_only: b
                 println!("   Please restart your terminal or run: source ~/.profile");
                 
                 if download_readme {
-                    match download_and_open_readme(&client, REPO, &latest_version, open_readme).await {
+                    match download_and_open_readme(&client, REPO, &latest_version, open_readme, preferred_editor).await {
                         Ok(Some(path)) => println!("README: {}", path.display()),
                         Ok(None) => {}
                         Err(e) => eprintln!("⚠️  Warning: Could not download README: {}", e),
@@ -1457,6 +1475,7 @@ async fn download_and_open_readme(
     repo: &str,
     version: &str,
     open_after_download: bool,
+    preferred_editor: Option<&str>,
 ) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
     let download_dir = get_download_dir()?;
     let readme_path = download_dir.join(format!("cfg2hcl-{}-README.md", version));
@@ -1466,7 +1485,7 @@ async fn download_and_open_readme(
     std::fs::write(&readme_path, readme_content)?;
     if open_after_download {
         println!("   Opening README...");
-        open_file(&readme_path)?;
+        open_file(&readme_path, preferred_editor)?;
     }
     Ok(Some(readme_path))
 }
@@ -1502,39 +1521,34 @@ fn get_download_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     }
 }
 
-fn open_file(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn open_file(path: &Path, preferred_editor: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    // 1. cfg2hcl preferred_editor setting
+    if let Some(editor) = preferred_editor {
+        std::process::Command::new(editor).arg(path).status()?;
+        return Ok(());
+    }
+    // 2. $EDITOR environment variable
+    if let Ok(editor) = std::env::var("EDITOR") {
+        std::process::Command::new(&editor).arg(path).status()?;
+        return Ok(());
+    }
+    // 3. OS default
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
-            .arg(path)
-            .status()?;
+        std::process::Command::new("open").arg(path).status()?;
     }
-    
     #[cfg(target_os = "linux")]
     {
-        // Try xdg-open first, fallback to $EDITOR if set
-        if std::process::Command::new("xdg-open")
-            .arg(path)
-            .status()
-            .is_err()
-        {
-            if let Ok(editor) = std::env::var("EDITOR") {
-                std::process::Command::new(editor)
-                    .arg(path)
-                    .status()?;
-            } else {
-                return Err("Could not open file: xdg-open not available and EDITOR not set".into());
-            }
+        if std::process::Command::new("xdg-open").arg(path).status().is_err() {
+            return Err("Could not open file: xdg-open failed and neither preferred_editor nor $EDITOR is set".into());
         }
     }
-    
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("cmd")
             .args(["/C", "start", "", path.to_str().unwrap()])
             .status()?;
     }
-    
     Ok(())
 }
 
@@ -1593,4 +1607,73 @@ fn print_yaml_error_context(content: &str, err: &serde_yaml::Error) {
             eprintln!("--------------------------------------------------\n");
         }
     }
+}
+
+fn run_completion(shell_str: &str, install: bool) -> Result<(), Box<dyn std::error::Error>> {
+    use clap::CommandFactory;
+    use clap_complete::{generate, Shell};
+    use std::str::FromStr;
+
+    let shell = Shell::from_str(shell_str)
+        .map_err(|_| format!("Unknown shell '{}'. Supported shells: bash, zsh, fish, powershell", shell_str))?;
+
+    let mut cmd = Cli::command();
+    let bin_name = "cfg2hcl";
+
+    if install {
+        let (path, post_install_msg) = completion_install_path(shell)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut file = std::fs::File::create(&path)?;
+        generate(shell, &mut cmd, bin_name, &mut file);
+        println!("Completion script installed to: {}", path.display());
+        if let Some(msg) = post_install_msg {
+            println!("{}", msg);
+        }
+    } else {
+        generate(shell, &mut cmd, bin_name, &mut std::io::stdout());
+    }
+
+    Ok(())
+}
+
+async fn run_open_readme(preferred_editor: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::builder()
+        .user_agent("cfg2hcl-open-readme")
+        .build()?;
+    match download_and_open_readme(&client, REPO, "latest", true, preferred_editor).await {
+        Ok(Some(path)) => println!("README saved to: {}", path.display()),
+        Ok(None) => {}
+        Err(e) => return Err(e),
+    }
+    Ok(())
+}
+
+fn completion_install_path(shell: CompletionShell) -> Result<(PathBuf, Option<String>), Box<dyn std::error::Error>> {
+    use clap_complete::Shell;
+    let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
+    let (path, msg): (PathBuf, Option<String>) = match shell {
+        Shell::Bash => (
+            PathBuf::from(format!("{}/.local/share/bash-completion/completions/cfg2hcl", home)),
+            Some("Ensure bash-completion is installed and sourced in your ~/.bashrc".to_string()),
+        ),
+        Shell::Zsh => (
+            PathBuf::from(format!("{}/.zsh/completions/_cfg2hcl", home)),
+            Some("Ensure ~/.zsh/completions is in your fpath — add to ~/.zshrc:\n  fpath=(~/.zsh/completions $fpath)\n  autoload -Uz compinit && compinit".to_string()),
+        ),
+        Shell::Fish => (
+            PathBuf::from(format!("{}/.config/fish/completions/cfg2hcl.fish", home)),
+            None,
+        ),
+        Shell::PowerShell => {
+            let userprofile = std::env::var("USERPROFILE").unwrap_or_else(|_| home.clone());
+            (
+                PathBuf::from(format!(r"{}\Documents\PowerShell\Completions\cfg2hcl.ps1", userprofile)),
+                Some("Add to your $PROFILE:\n  . \"$env:USERPROFILE\\Documents\\PowerShell\\Completions\\cfg2hcl.ps1\"".to_string()),
+            )
+        },
+        _ => return Err(format!("Unsupported shell: {:?}", shell).into()),
+    };
+    Ok((path, msg))
 }
