@@ -387,6 +387,21 @@ impl<'a> Transpiler<'a> {
                 }
             }
 
+            // Emit labels for the folder resource itself
+            if let Some(serde_yaml::Value::Mapping(labels_map)) = folder.extra.get("labels") {
+                let mut sorted: Vec<_> = labels_map.iter()
+                    .filter_map(|(k, v)| k.as_str().zip(v.as_str()))
+                    .collect();
+                sorted.sort_by_key(|(k, _)| *k);
+                if !sorted.is_empty() {
+                    let map: hcl::Map<String, hcl::Value> = sorted
+                        .into_iter()
+                        .map(|(k, v)| (k.to_string(), hcl::Value::from(v.to_string())))
+                        .collect();
+                    folder_builder = folder_builder.add_attribute(("labels", hcl::Value::from(map)));
+                }
+            }
+
             blocks.push(folder_builder.build());
 
             // Generate Import Block if requested
@@ -441,8 +456,10 @@ impl<'a> Transpiler<'a> {
                 }
             }
 
-            // Inject billing_account if missing and variable exists
-            if !project.extra.contains_key("billing_account") {
+            // Emit billing_account: explicit YAML value takes priority, then variable fallback
+            if let Some(ba) = &project.billing_account {
+                block_builder = block_builder.add_attribute(hcl::Attribute::new("billing_account", ba.clone()));
+            } else if !project.extra.contains_key("billing_account") {
                 if let Some(ba) = self.variables.get("billing-account-infra") {
                     if let Some(val) = self.yaml_to_hcl_value(ba) {
                         block_builder = block_builder.add_attribute(hcl::Attribute::new("billing_account", val));
@@ -456,6 +473,28 @@ impl<'a> Transpiler<'a> {
                     block_builder = block_builder.add_attribute(hcl::Attribute::new("folder_id", self.parse_hcl_expr(f_ref)));
                 } else if let Some(oid) = &ctx.org_id {
                     block_builder = block_builder.add_attribute(hcl::Attribute::new("org_id", oid.clone()));
+                }
+            }
+
+            // Emit explicit Project fields that serde captures outside of `extra`
+            if let Some(labels) = &project.labels {
+                if !labels.is_empty() {
+                    let mut sorted: Vec<_> = labels.iter().collect();
+                    sorted.sort_by_key(|(k, _)| k.as_str());
+                    let map: hcl::Map<String, hcl::Value> = sorted
+                        .into_iter()
+                        .map(|(k, v)| (k.clone(), hcl::Value::from(v.clone())))
+                        .collect();
+                    block_builder = block_builder.add_attribute(("labels", hcl::Value::from(map)));
+                }
+            }
+            if let Some(dp) = &project.deletion_policy {
+                block_builder = block_builder.add_attribute(("deletion_policy", dp.clone()));
+            }
+            if let Some(tags) = &project.tags {
+                if !tags.is_empty() {
+                    let seq: Vec<hcl::Value> = tags.iter().map(|t| hcl::Value::from(t.clone())).collect();
+                    block_builder = block_builder.add_attribute(("tags", hcl::Value::from(seq)));
                 }
             }
 

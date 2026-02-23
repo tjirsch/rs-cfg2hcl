@@ -1,6 +1,6 @@
 [package]
 name = "cfg2hcl"
-version = "0.5.3"
+version = "0.5.4"
 edition = "2024"
 authors = ["Thomas Jirsch"]
 description = "A tool to transpile compact YAML infrastructure definitions into OpenTofu/Terraform HCL. Bootstrap and migrate gcp organization."
@@ -37,7 +37,11 @@ google-cloud-gax = "1.6.0"
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
-lto = "thin"
+opt-level = "z"          # optimize for size (vs "s" which is slightly less aggressive)
+lto = true               # full LTO — more effective than "thin" for size
+codegen-units = 1        # single codegen unit enables better dead code elimination
+strip = true             # strip symbols and debug info from the binary
+panic = "abort"          # removes unwinding machinery (~50-100KB)
 
 [workspace]
 members = ["xtask"]
