@@ -328,9 +328,16 @@ fn load_global_settings() -> GlobalSettings {
     if path.exists() {
         let content = match fs::read_to_string(&path) {
             Ok(c) => c,
-            Err(_) => return GlobalSettings::default(),
+            Err(e) => {
+                eprintln!("⚠️  Warning: Could not read {}: {}", path.display(), e);
+                return GlobalSettings::default();
+            }
         };
-        return toml::from_str(&content).unwrap_or_default();
+        return toml::from_str(&content).unwrap_or_else(|e| {
+            eprintln!("⚠️  Warning: Could not parse {}: {}", path.display(), e);
+            eprintln!("   String values must be quoted, e.g.  preferred_editor = \"zed\"");
+            GlobalSettings::default()
+        });
     }
     // First run: create directory and write defaults
     let defaults = GlobalSettings::default();
@@ -1480,11 +1487,11 @@ async fn download_and_open_readme(
     let download_dir = get_download_dir()?;
     let readme_path = download_dir.join(format!("cfg2hcl-{}-README.md", version));
     let readme_url = format!("https://raw.githubusercontent.com/{}/main/README.md", repo);
-    println!("\n📄 Downloading README...");
+    println!("\n📄 Downloading README to '{}'...", readme_path.display());
     let readme_content = client.get(&readme_url).send().await?.text().await?;
-    std::fs::write(&readme_path, readme_content)?;
+    std::fs::write(&readme_path, &readme_content)
+        .map_err(|e| format!("Failed to write '{}': {}", readme_path.display(), e))?;
     if open_after_download {
-        println!("   Opening README...");
         open_file(&readme_path, preferred_editor)?;
     }
     Ok(Some(readme_path))
@@ -1522,32 +1529,68 @@ fn get_download_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
 }
 
 fn open_file(path: &Path, preferred_editor: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-    // 1. cfg2hcl preferred_editor setting
-    if let Some(editor) = preferred_editor {
-        std::process::Command::new(editor).arg(path).status()?;
-        return Ok(());
+    let path_str = path.to_str()
+        .ok_or_else(|| format!("File path {:?} contains non-UTF-8 characters", path))?;
+
+    let editor_env = std::env::var("EDITOR").ok();
+    let editor = preferred_editor.or_else(|| editor_env.as_deref());
+
+    if let Some(editor) = editor {
+        println!("   Opening '{}' with '{}'...", path_str, editor);
+        // Try direct invocation first — works when the editor binary is in PATH
+        let result = std::process::Command::new(editor).arg(path).status();
+        match result {
+            Ok(_) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // On macOS, fall back to `open -a <editor> <file>` so GUI apps
+                // (like Zed, VS Code) can be found by app-bundle name even when
+                // their CLI wrapper is not on the system PATH.
+                #[cfg(target_os = "macos")]
+                {
+                    let open_result = std::process::Command::new("open")
+                        .args(["-a", editor, path_str])
+                        .status();
+                    if open_result.map(|s| s.success()).unwrap_or(false) {
+                        return Ok(());
+                    }
+                }
+                return Err(format!(
+                    "Editor '{}' not found — is it installed and on your PATH?\n\
+                     Hint: set preferred_editor to the full path in ~/.config/cfg2hcl/cfg2hcl.toml\n\
+                     e.g.  preferred_editor = \"/usr/local/bin/zed\"",
+                    editor
+                ).into());
+            }
+            Err(e) => return Err(format!("Failed to launch editor '{}': {}", editor, e).into()),
+        }
     }
-    // 2. $EDITOR environment variable
-    if let Ok(editor) = std::env::var("EDITOR") {
-        std::process::Command::new(&editor).arg(path).status()?;
-        return Ok(());
-    }
-    // 3. OS default
+
+    // No editor configured — use OS default
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open").arg(path).status()?;
+        println!("   Opening '{}' with system default app...", path_str);
+        std::process::Command::new("open")
+            .arg(path_str)
+            .status()
+            .map_err(|e| format!("Failed to open '{}' with 'open': {}", path_str, e))?;
     }
     #[cfg(target_os = "linux")]
     {
-        if std::process::Command::new("xdg-open").arg(path).status().is_err() {
-            return Err("Could not open file: xdg-open failed and neither preferred_editor nor $EDITOR is set".into());
+        println!("   Opening '{}' with xdg-open...", path_str);
+        if std::process::Command::new("xdg-open").arg(path_str).status().is_err() {
+            return Err(format!(
+                "Could not open '{}': xdg-open failed and neither preferred_editor nor $EDITOR is set",
+                path_str
+            ).into());
         }
     }
     #[cfg(target_os = "windows")]
     {
+        println!("   Opening '{}' with system default app...", path_str);
         std::process::Command::new("cmd")
-            .args(["/C", "start", "", path.to_str().unwrap()])
-            .status()?;
+            .args(["/C", "start", "", path_str])
+            .status()
+            .map_err(|e| format!("Failed to open '{}': {}", path_str, e))?;
     }
     Ok(())
 }
