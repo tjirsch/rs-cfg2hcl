@@ -30,6 +30,7 @@ User-level **parameters** (e.g. when to check for updates) live in **`~/.config/
 | Option | Default | Description |
 |--------|---------|-------------|
 | `self_update_frequency` | `"always"` | When to check for updates on normal runs: `never`, `always`, or `daily` (at most once per 24 hours). The check is check-only (no install, no README). |
+| `preferred_editor` | *(none)* | Editor command used to open files (e.g. `"zed"`, `"code"`, `"vim"`). Falls back to `$EDITOR` env var, then the OS default app. String values must be quoted. |
 
 **Project config** (paths, providers, etc.) stays in **`config.toml`** per project; see [Configuration](#configuration) below.
 
@@ -37,6 +38,7 @@ Example (optional; the file is created automatically when needed):
 
 ```toml
 self_update_frequency = "daily"
+preferred_editor = "zed"
 ```
 
 ## Installation
@@ -95,6 +97,8 @@ All commands accept the [global options](#global-options) (`--config`, `--valida
 | `migrate <INPUT>` | `--mode` |
 | `get-presets` | *(none; uses `yaml_dir` from config)* |
 | `self-update` | `--no-download-readme`, `--no-open-readme`, `--check-only` |
+| `open-readme` | *(none)* |
+| `completion <SHELL>` | `--install` |
 
 Details for each command are below.
 
@@ -333,6 +337,47 @@ cfg2hcl self-update --no-download-readme --no-open-readme
 
 **Under the Hood:**
 - Fetches the latest release from the GitHub API, compares versions, and runs the cargo-dist installer script when a newer version is available. On success, optionally downloads `README.md` from the repo and prints its path (e.g. `README: /Users/you/Downloads/cfg2hcl-0.4.9-README.md`).
+
+### Open README (`open-readme`)
+Download the latest `README.md` from the main branch and open it with your configured editor (see [user settings](#user-settings-configcfg2hclcfg2hcltoml)).
+
+```bash
+cfg2hcl open-readme
+```
+
+The README is saved to your Downloads folder (e.g. `~/Downloads/cfg2hcl-latest-README.md`). The editor used follows the same priority as all file-open operations: `preferred_editor` in `~/.config/cfg2hcl/cfg2hcl.toml` → `$EDITOR` env var → OS default app.
+
+### Shell Completion (`completion`)
+Generate a tab-completion script for your shell. Supports `bash`, `zsh`, `fish`, and `powershell`.
+
+```bash
+# Print completion script to stdout and add to shell config manually
+cfg2hcl completion bash >> ~/.bash_completion
+cfg2hcl completion zsh >> ~/.zshrc
+
+# Auto-install to the canonical location for the shell
+cfg2hcl completion zsh --install
+# → installs to ~/.zsh/completions/_cfg2hcl
+# → prints fpath setup instructions
+
+cfg2hcl completion fish --install
+# → installs to ~/.config/fish/completions/cfg2hcl.fish
+```
+
+**Install locations for `--install`:**
+
+| Shell | Path |
+|-------|------|
+| bash | `~/.local/share/bash-completion/completions/cfg2hcl` |
+| zsh | `~/.zsh/completions/_cfg2hcl` |
+| fish | `~/.config/fish/completions/cfg2hcl.fish` |
+| powershell | `%USERPROFILE%\Documents\PowerShell\Completions\cfg2hcl.ps1` |
+
+For zsh, add this to `~/.zshrc` if not already present:
+```zsh
+fpath=(~/.zsh/completions $fpath)
+autoload -Uz compinit && compinit
+```
 
 ## Day 0 Onboarding Playbook
 
