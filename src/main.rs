@@ -270,6 +270,9 @@ enum Commands {
         /// Only check if an update is available; do not install or download README
         #[arg(long)]
         check_only: bool,
+        /// Skip SHA-256 checksum verification (use only if the release predates sidecar support)
+        #[arg(long)]
+        skip_checksum: bool,
     },
     /// Download the presets folder from the repo into yaml_dir/presets
     GetPresets,
@@ -282,6 +285,14 @@ enum Commands {
         /// Install the completion script to the default location for the shell
         #[arg(long)]
         install: bool,
+    },
+    /// Set (or clear) the preferred editor in global settings
+    SetPreferredEditor {
+        /// Editor command to use (e.g. "code", "zed", "vim"). Omit to show current value.
+        editor: Option<String>,
+        /// Remove the preferred_editor setting (fall back to $EDITOR / OS default)
+        #[arg(long)]
+        clear: bool,
     },
 }
 
@@ -393,8 +404,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Commands::Transpile { .. } | Commands::ScanPlan { .. } | Commands::GenerateMigration { .. } | Commands::UpdateSchema { .. } | Commands::DiscoverFromState { .. } | Commands::DiscoverFromOrganization { .. } | Commands::Migrate { .. } | Commands::Bootstrap { .. } | Commands::GetPresets => {
                     return Err("Config file 'config.toml' not found in current directory. Please provide it or specify --config <PATH>.".into());
                 }
-                Commands::Init { .. } | Commands::SelfUpdate { .. } | Commands::Completion { .. } | Commands::OpenReadme => {
-                    // Init, SelfUpdate, Completion and OpenReadme can proceed without a config file
+                Commands::Init { .. } | Commands::SelfUpdate { .. } | Commands::Completion { .. } | Commands::OpenReadme | Commands::SetPreferredEditor { .. } => {
+                    // These commands can proceed without a config file
                     PathBuf::from("config.toml")
                 }
             }
@@ -402,7 +413,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Optional: check for updates per global settings (skip for SelfUpdate and Init)
-    if !matches!(cmd_choice, Commands::SelfUpdate { .. } | Commands::Init { .. }) {
+    if !matches!(cmd_choice, Commands::SelfUpdate { .. } | Commands::Init { .. } | Commands::SetPreferredEditor { .. }) {
         let _ = maybe_check_for_updates(&mut global_settings).await;
     }
 
@@ -988,12 +999,29 @@ Thumbs.db
             println!("Migration to {} mode complete.", target_mode);
             Ok(())
         }
-        Commands::SelfUpdate { no_download_readme, no_open_readme, check_only } => {
-            run_self_update(!no_download_readme, !no_open_readme, check_only, global_settings.preferred_editor.as_deref()).await
+        Commands::SelfUpdate { no_download_readme, no_open_readme, check_only, skip_checksum } => {
+            run_self_update(!no_download_readme, !no_open_readme, check_only, skip_checksum, global_settings.preferred_editor.as_deref()).await
         }
         Commands::GetPresets => run_get_presets(&runtime_config.yaml_dir).await,
         Commands::OpenReadme => run_open_readme(global_settings.preferred_editor.as_deref()).await,
         Commands::Completion { shell, install } => run_completion(&shell, install),
+        Commands::SetPreferredEditor { editor, clear } => {
+            if clear {
+                global_settings.preferred_editor = None;
+                save_global_settings(&global_settings)?;
+                println!("✅ preferred_editor cleared (will fall back to $EDITOR / OS default).");
+            } else if let Some(e) = editor {
+                global_settings.preferred_editor = Some(e.clone());
+                save_global_settings(&global_settings)?;
+                println!("✅ preferred_editor set to \"{}\".", e);
+            } else {
+                match &global_settings.preferred_editor {
+                    Some(e) => println!("preferred_editor = \"{}\"", e),
+                    None => println!("preferred_editor is not set (using $EDITOR / OS default)."),
+                }
+            }
+            Ok(())
+        }
     }?;
 
     Ok(())
@@ -1394,7 +1422,7 @@ struct ContentItem {
     download_url: Option<String>,
 }
 
-async fn run_self_update(download_readme: bool, open_readme: bool, check_only: bool, preferred_editor: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_self_update(download_readme: bool, open_readme: bool, check_only: bool, skip_checksum: bool, preferred_editor: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
 
     let current_version = env!("CARGO_PKG_VERSION");
     println!("Current version: {}", current_version);
@@ -1411,9 +1439,17 @@ async fn run_self_update(download_readme: bool, open_readme: bool, check_only: b
     }
 
     #[derive(Deserialize)]
+    struct Asset {
+        name: String,
+        browser_download_url: String,
+    }
+
+    #[derive(Deserialize)]
     struct Release {
         tag_name: String,
         html_url: String,
+        #[serde(default)]
+        assets: Vec<Asset>,
     }
 
     let release: Release = response.json().await?;
@@ -1430,30 +1466,67 @@ async fn run_self_update(download_readme: bool, open_readme: bool, check_only: b
             return Ok(());
         }
         println!("\n📥 Installing update...");
-        
-        // Find the installer script
+
         let installer_url = format!("https://github.com/{}/releases/latest/download/cfg2hcl-installer.sh", REPO);
-        
-        // Download and run installer
-        let installer_script = client.get(&installer_url).send().await?.text().await?;
-        
+
+        // Download installer as bytes for checksum verification
+        let installer_bytes = client.get(&installer_url).send().await?.bytes().await?;
+
+        // Checksum verification
+        let checksum_asset = release.assets.iter()
+            .find(|a| a.name == "cfg2hcl-installer.sh.sha256");
+        match checksum_asset {
+            Some(asset) => {
+                let expected_raw = client.get(&asset.browser_download_url)
+                    .send().await?.text().await?;
+                let expected = expected_raw.trim().split_whitespace().next().unwrap_or("").to_lowercase();
+                use sha2::{Digest, Sha256};
+                let actual = hex::encode(Sha256::digest(&installer_bytes));
+                if actual != expected {
+                    return Err(format!(
+                        "Checksum mismatch — installer may have been tampered with.\n\
+                         Expected: {}\n\
+                         Got:      {}\n\
+                         Aborting. Download the release manually from {}",
+                        expected, actual, release.html_url
+                    ).into());
+                }
+                println!("✅ Checksum verified");
+            }
+            None if skip_checksum => {
+                eprintln!(
+                    "⚠️  No checksum file found in this release. \
+                     Proceeding without verification (--skip-checksum)."
+                );
+            }
+            None => {
+                return Err(
+                    "No checksum file (cfg2hcl-installer.sh.sha256) found in this release.\n\
+                     Cannot verify installer integrity. Aborting.\n\
+                     If you are confident in the download, re-run with --skip-checksum."
+                    .into()
+                );
+            }
+        }
+
         // Write to temp file and execute
-        let temp_file = std::env::temp_dir().join("cfg2hcl-installer.sh");
-        std::fs::write(&temp_file, installer_script)?;
-        
+        let temp_file = std::env::temp_dir().join(format!("cfg2hcl-installer-{}.sh", std::process::id()));
+        std::fs::write(&temp_file, &installer_bytes)?;
+
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&temp_file, std::fs::Permissions::from_mode(0o755))?;
-            
+
             let status = std::process::Command::new("sh")
                 .arg(&temp_file)
                 .status()?;
-            
+            let _ = std::fs::remove_file(&temp_file);
+
             if status.success() {
                 println!("✅ Update installed successfully!");
                 println!("   Please restart your terminal or run: source ~/.profile");
-                
+
                 if download_readme {
                     match download_and_open_readme(&client, REPO, &latest_version, open_readme, preferred_editor).await {
                         Ok(Some(path)) => println!("README: {}", path.display()),
@@ -1465,7 +1538,7 @@ async fn run_self_update(download_readme: bool, open_readme: bool, check_only: b
                 return Err("Failed to run installer script".into());
             }
         }
-        
+
         #[cfg(windows)]
         {
             return Err("Automatic installation on Windows is not yet supported. Please download and run the installer manually.".into());
@@ -1473,7 +1546,7 @@ async fn run_self_update(download_readme: bool, open_readme: bool, check_only: b
     } else {
         println!("✅ You are running the latest version!");
     }
-    
+
     Ok(())
 }
 
