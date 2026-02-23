@@ -283,6 +283,14 @@ enum Commands {
         #[arg(long)]
         install: bool,
     },
+    /// Set (or clear) the preferred editor in global settings
+    SetPreferredEditor {
+        /// Editor command to use (e.g. "code", "zed", "vim"). Omit to show current value.
+        editor: Option<String>,
+        /// Remove the preferred_editor setting (fall back to $EDITOR / OS default)
+        #[arg(long)]
+        clear: bool,
+    },
 }
 
 /// User-level settings for cfg2hcl in ~/.config/cfg2hcl/cfg2hcl.toml. Created on first run with defaults.
@@ -393,8 +401,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Commands::Transpile { .. } | Commands::ScanPlan { .. } | Commands::GenerateMigration { .. } | Commands::UpdateSchema { .. } | Commands::DiscoverFromState { .. } | Commands::DiscoverFromOrganization { .. } | Commands::Migrate { .. } | Commands::Bootstrap { .. } | Commands::GetPresets => {
                     return Err("Config file 'config.toml' not found in current directory. Please provide it or specify --config <PATH>.".into());
                 }
-                Commands::Init { .. } | Commands::SelfUpdate { .. } | Commands::Completion { .. } | Commands::OpenReadme => {
-                    // Init, SelfUpdate, Completion and OpenReadme can proceed without a config file
+                Commands::Init { .. } | Commands::SelfUpdate { .. } | Commands::Completion { .. } | Commands::OpenReadme | Commands::SetPreferredEditor { .. } => {
+                    // These commands can proceed without a config file
                     PathBuf::from("config.toml")
                 }
             }
@@ -402,7 +410,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Optional: check for updates per global settings (skip for SelfUpdate and Init)
-    if !matches!(cmd_choice, Commands::SelfUpdate { .. } | Commands::Init { .. }) {
+    if !matches!(cmd_choice, Commands::SelfUpdate { .. } | Commands::Init { .. } | Commands::SetPreferredEditor { .. }) {
         let _ = maybe_check_for_updates(&mut global_settings).await;
     }
 
@@ -994,6 +1002,23 @@ Thumbs.db
         Commands::GetPresets => run_get_presets(&runtime_config.yaml_dir).await,
         Commands::OpenReadme => run_open_readme(global_settings.preferred_editor.as_deref()).await,
         Commands::Completion { shell, install } => run_completion(&shell, install),
+        Commands::SetPreferredEditor { editor, clear } => {
+            if clear {
+                global_settings.preferred_editor = None;
+                save_global_settings(&global_settings)?;
+                println!("✅ preferred_editor cleared (will fall back to $EDITOR / OS default).");
+            } else if let Some(e) = editor {
+                global_settings.preferred_editor = Some(e.clone());
+                save_global_settings(&global_settings)?;
+                println!("✅ preferred_editor set to \"{}\".", e);
+            } else {
+                match &global_settings.preferred_editor {
+                    Some(e) => println!("preferred_editor = \"{}\"", e),
+                    None => println!("preferred_editor is not set (using $EDITOR / OS default)."),
+                }
+            }
+            Ok(())
+        }
     }?;
 
     Ok(())

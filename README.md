@@ -99,6 +99,7 @@ All commands accept the [global options](#global-options) (`--config`, `--valida
 | `self-update` | `--no-download-readme`, `--no-open-readme`, `--check-only` |
 | `open-readme` | *(none)* |
 | `completion <SHELL>` | `--install` |
+| `set-preferred-editor [EDITOR]` | `--clear` |
 
 Details for each command are below.
 
@@ -378,6 +379,24 @@ For zsh, add this to `~/.zshrc` if not already present:
 fpath=(~/.zsh/completions $fpath)
 autoload -Uz compinit && compinit
 ```
+
+### Set Preferred Editor (`set-preferred-editor`)
+Set, clear, or show the `preferred_editor` option in `~/.config/cfg2hcl/cfg2hcl.toml` without editing the file manually.
+
+```bash
+# Set the editor
+cfg2hcl set-preferred-editor code
+cfg2hcl set-preferred-editor zed
+cfg2hcl set-preferred-editor /usr/local/bin/vim
+
+# Clear the setting (fall back to $EDITOR / OS default)
+cfg2hcl set-preferred-editor --clear
+
+# Show the current setting
+cfg2hcl set-preferred-editor
+```
+
+The editor is used when opening files from `open-readme` and `self-update` (post-install README). The priority chain is: `preferred_editor` config → `$EDITOR` env var → OS default app.
 
 ## Day 0 Onboarding Playbook
 
